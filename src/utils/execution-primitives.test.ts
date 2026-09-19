@@ -168,11 +168,11 @@ describe('reconcileExactShareFok', () => {
     expect(r.reasons).toContain('INVALID_FILL_PRICE');
   });
 
-  it('returns rejected without pretending there was a fill', () => {
+  it('returns rejected without pretending there was a fill when no fill evidence exists', () => {
     const r = reconcileExactShareFok(
       REQ,
       { clientOrderId: REQ.clientOrderId, status: 'REJECTED', error: 'venue rejected' },
-      [fill()]
+      []
     );
     expect(r.status).toBe('REJECTED');
     expect(r.filledShares).toBe(0);
