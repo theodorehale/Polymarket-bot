@@ -10,7 +10,7 @@ export interface FillSlice { price: number; shares: number; notionalUsd: number;
 export interface SimulatedFill {
   side: ExecutableSide; requestedShares: number; filledShares: number; fullyFilled: boolean;
   vwap: number; notionalUsd: number; worstPrice: number | null; limitPrice?: number;
-  priceConstrained: boolean; levelsConsumed: FillSlice[];
+  priceConstrained: boolean; invalidPrice: boolean; levelsConsumed: FillSlice[];
 }
 export interface BookFreshnessResult {
   fresh: boolean; yesAgeMs: number; noAgeMs: number; skewMs: number;
@@ -104,7 +104,12 @@ export function validateBookFreshness(i: BookFreshnessInput): BookFreshnessResul
 
 export function simulateExactShareFill(levels: PriceLevel[], targetShares: number, side: ExecutableSide, limitPrice?: number): SimulatedFill {
   const requestedShares = Number.isFinite(targetShares) && targetShares > 0 ? targetShares : 0;
-  const xs = levels.filter(x => Number.isFinite(x.price) && Number.isFinite(x.size) && x.price >= 0 && x.size > 0)
+  const invalidPrice = levels.some(x => !Number.isFinite(x.price) || x.price < 0 || x.price > 1);
+  if (invalidPrice) {
+    return { side, requestedShares, filledShares: 0, fullyFilled: false, vwap: 0, notionalUsd: 0,
+      worstPrice: null, limitPrice, priceConstrained: false, invalidPrice: true, levelsConsumed: [] };
+  }
+  const xs = levels.filter(x => Number.isFinite(x.size) && x.size > 0)
     .map(x => ({ ...x })).sort((a, b) => side === 'BUY' ? a.price - b.price : b.price - a.price);
   let filledShares = 0, notionalUsd = 0, worstPrice: number | null = null, priceConstrained = false;
   const levelsConsumed: FillSlice[] = [];
@@ -122,7 +127,7 @@ export function simulateExactShareFill(levels: PriceLevel[], targetShares: numbe
   }
   const fullyFilled = requestedShares > 0 && filledShares + SHARE_EPS >= requestedShares;
   return { side, requestedShares, filledShares, fullyFilled, vwap: filledShares > 0 ? notionalUsd / filledShares : 0,
-    notionalUsd, worstPrice, limitPrice, priceConstrained, levelsConsumed };
+    notionalUsd, worstPrice, limitPrice, priceConstrained, invalidPrice: false, levelsConsumed };
 }
 
 function feeError(m: FeeModel): string | null {
@@ -175,7 +180,15 @@ export function calculateExecutableQuote(i: ExecutableQuoteInput): ExecutableArb
     maxBookAgeMs: i.maxBookAgeMs, maxBookSkewMs: i.maxBookSkewMs, maxFutureDriftMs: i.maxFutureDriftMs });
   if (!books.fresh) reasons.push(...books.reasons);
   if (!(Number.isFinite(s) && s > 0)) reasons.push('INVALID_TARGET_PAIR_SHARES');
-  if (![i.costs.expectedGasUsd, i.costs.worstCaseGasUsd, i.costs.expectedOtherCostsUsd ?? 0, i.costs.worstCaseOtherCostsUsd ?? 0].every(nn)) reasons.push('INVALID_EXECUTION_COSTS');
+  const expectedOtherCostsUsd = i.costs.expectedOtherCostsUsd ?? 0;
+  const worstCaseOtherCostsUsd = i.costs.worstCaseOtherCostsUsd ?? 0;
+  if (![i.costs.expectedGasUsd, i.costs.worstCaseGasUsd, expectedOtherCostsUsd, worstCaseOtherCostsUsd].every(nn)) reasons.push('INVALID_EXECUTION_COSTS');
+  if (nn(i.costs.expectedGasUsd) && nn(i.costs.worstCaseGasUsd) && i.costs.worstCaseGasUsd + USD_EPS < i.costs.expectedGasUsd) reasons.push('WORST_CASE_GAS_LT_EXPECTED');
+  if (nn(expectedOtherCostsUsd) && nn(worstCaseOtherCostsUsd) && worstCaseOtherCostsUsd + USD_EPS < expectedOtherCostsUsd) reasons.push('WORST_CASE_OTHER_COSTS_LT_EXPECTED');
+  const yesBookHasInvalidPrice = [...i.yesBook.bids, ...i.yesBook.asks].some(x => !Number.isFinite(x.price) || x.price < 0 || x.price > 1);
+  const noBookHasInvalidPrice = [...i.noBook.bids, ...i.noBook.asks].some(x => !Number.isFinite(x.price) || x.price < 0 || x.price > 1);
+  if (yesBookHasInvalidPrice) reasons.push('INVALID_YES_BOOK_PRICE');
+  if (noBookHasInvalidPrice) reasons.push('INVALID_NO_BOOK_PRICE');
   const ye = feeError(i.yesFee), ne = feeError(i.noFee); if (ye) reasons.push('YES_' + ye); if (ne) reasons.push('NO_' + ne);
   const yl = side === 'BUY' ? i.yesBook.asks : i.yesBook.bids, nl = side === 'BUY' ? i.noBook.asks : i.noBook.bids;
   const yu = simulateExactShareFill(yl, s, side), nu = simulateExactShareFill(nl, s, side), slip = i.maxAdverseSlippageBps ?? 0;
@@ -186,7 +199,7 @@ export function calculateExecutableQuote(i: ExecutableQuoteInput): ExecutableArb
   if (!yf.fullyFilled) reasons.push('INSUFFICIENT_YES_DEPTH'); if (!nf.fullyFilled) reasons.push('INSUFFICIENT_NO_DEPTH');
   const yef = expectedFee(i.yesFee, yf), nef = expectedFee(i.noFee, nf), ywf = worstFee(i.yesFee, yf, yLimit), nwf = worstFee(i.noFee, nf, nLimit);
   const expectedFeesUsd = yef === null || nef === null ? null : yef + nef, worstCaseFeesUsd = ywf === null || nwf === null ? null : ywf + nwf;
-  const eo = i.costs.expectedOtherCostsUsd ?? 0, wo = i.costs.worstCaseOtherCostsUsd ?? 0, pair = Number.isFinite(s) && s > 0 ? s : 0;
+  const eo = expectedOtherCostsUsd, wo = worstCaseOtherCostsUsd, pair = Number.isFinite(s) && s > 0 ? s : 0;
   const expTwo = yf.notionalUsd + nf.notionalUsd, worstTwo = s > 0 ? s * (yLimit + nLimit) : 0;
   const eg = i.type === 'long' ? pair - expTwo : expTwo - pair, wg = i.type === 'long' ? pair - worstTwo : worstTwo - pair;
   const en = expectedFeesUsd === null ? -Infinity : eg - expectedFeesUsd - i.costs.expectedGasUsd - eo;
