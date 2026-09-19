@@ -22,11 +22,21 @@ export interface ValidatedExactShareFokRequest extends ExactShareFokRequest {
   orderType: 'FOK';
 }
 
+export type OrderSubmissionStatus = 'ACCEPTED' | 'REJECTED' | 'UNKNOWN';
+
 export interface OrderSubmission {
   clientOrderId: string;
-  accepted: boolean;
+  status: OrderSubmissionStatus;
   orderId?: string;
   error?: string;
+}
+
+export interface ExactShareFokAdapter {
+  submit(request: ValidatedExactShareFokRequest): Promise<OrderSubmission>;
+  getFills(
+    request: ValidatedExactShareFokRequest,
+    submission: OrderSubmission
+  ): Promise<ExecutionFill[]>;
 }
 
 export interface ExecutionFill {
@@ -167,27 +177,35 @@ export function reconcileExactShareFok(
     reasons.push('SUBMISSION_CLIENT_ORDER_ID_MISMATCH');
   }
 
-  if (!submission.accepted) {
-    if (submission.error) reasons.push('ORDER_REJECTED:' + submission.error);
-    else reasons.push('ORDER_REJECTED');
+  if (submission.status === 'REJECTED') {
+    if (fills.length > 0) {
+      reasons.push('SUBMISSION_FILL_CONFLICT');
+    } else {
+      if (submission.error) reasons.push('ORDER_REJECTED:' + submission.error);
+      else reasons.push('ORDER_REJECTED');
 
-    return {
-      clientOrderId: request.clientOrderId,
-      orderId: submission.orderId,
-      tokenId: request.tokenId,
-      side: request.side,
-      requestedShares: request.shares,
-      filledShares: 0,
-      averagePrice: null,
-      notionalUsd: 0,
-      feeUsd: 0,
-      status: 'REJECTED',
-      fullyFilled: false,
-      reconciliationComplete: true,
-      safeToContinue: false,
-      reasons,
-      tradeIds: [],
-    };
+      return {
+        clientOrderId: request.clientOrderId,
+        orderId: submission.orderId,
+        tokenId: request.tokenId,
+        side: request.side,
+        requestedShares: request.shares,
+        filledShares: 0,
+        averagePrice: null,
+        notionalUsd: 0,
+        feeUsd: 0,
+        status: 'REJECTED',
+        fullyFilled: false,
+        reconciliationComplete: true,
+        safeToContinue: false,
+        reasons,
+        tradeIds: [],
+      };
+    }
+  }
+
+  if (submission.status === 'UNKNOWN') {
+    reasons.push('SUBMISSION_STATE_UNKNOWN');
   }
 
   const dedup = new Map<string, ExecutionFill>();
@@ -271,7 +289,8 @@ export function reconcileExactShareFok(
     !overfilled &&
     feeKnown &&
     reasons.length === 0 &&
-    submission.clientOrderId === request.clientOrderId;
+    submission.clientOrderId === request.clientOrderId &&
+    submission.status === 'ACCEPTED';
 
   return {
     clientOrderId: request.clientOrderId,
@@ -317,4 +336,60 @@ export function validateFeeQuote(
   }
 
   return { valid: reasons.length === 0, reasons };
+}
+
+
+/**
+ * Adapter-driven orchestration for Phase 3.3 tests. The adapter is injected;
+ * this module never constructs a wallet/client and never performs real I/O by itself.
+ */
+export async function executeExactShareFok(
+  request: ExactShareFokRequest,
+  adapter: ExactShareFokAdapter
+): Promise<FillReceipt> {
+  const validation = validateExactShareFokRequest(request);
+  if (!validation.valid) {
+    return reconcileExactShareFok(
+      request,
+      { clientOrderId: request.clientOrderId, status: 'REJECTED', error: 'INVALID_REQUEST' },
+      []
+    );
+  }
+
+  let submission: OrderSubmission;
+  try {
+    submission = await adapter.submit(validation.request);
+  } catch (error) {
+    return reconcileExactShareFok(
+      request,
+      {
+        clientOrderId: request.clientOrderId,
+        status: 'UNKNOWN',
+        error: error instanceof Error ? error.message : String(error),
+      },
+      []
+    );
+  }
+
+  let fills: ExecutionFill[] = [];
+  try {
+    fills = await adapter.getFills(validation.request, submission);
+  } catch (error) {
+    const receipt = reconcileExactShareFok(request, submission, []);
+    return {
+      ...receipt,
+      safeToContinue: false,
+      reconciliationComplete: false,
+      status: 'UNKNOWN',
+      reasons: [
+        ...new Set([
+          ...receipt.reasons,
+          'FILL_RECONCILIATION_FAILED',
+          error instanceof Error ? 'FILL_ERROR:' + error.message : 'FILL_ERROR:' + String(error),
+        ]),
+      ],
+    };
+  }
+
+  return reconcileExactShareFok(request, submission, fills);
 }
