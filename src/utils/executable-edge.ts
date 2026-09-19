@@ -10,7 +10,8 @@ export interface FillSlice { price: number; shares: number; notionalUsd: number;
 export interface SimulatedFill {
   side: ExecutableSide; requestedShares: number; filledShares: number; fullyFilled: boolean;
   vwap: number; notionalUsd: number; worstPrice: number | null; limitPrice?: number;
-  priceConstrained: boolean; levelsConsumed: FillSlice[];
+  priceConstrained: boolean; bookPricesValid: boolean; invalidPriceLevels: number;
+  levelsConsumed: FillSlice[];
 }
 export interface BookFreshnessResult {
   fresh: boolean; yesAgeMs: number; noAgeMs: number; skewMs: number;
@@ -81,6 +82,9 @@ function roundStep(x: number, step: number): number {
   return Number((Math.round(x / step) * step).toFixed(d));
 }
 function strictGt(x: number, y: number, eps: number) { return Number.isFinite(x) && x > y + eps; }
+function hasInvalidBookPrice(book: ExecutableBook): boolean {
+  return [...book.bids, ...book.asks].some(x => !Number.isFinite(x.price) || x.price < 0 || x.price > 1);
+}
 
 export function validateBookFreshness(i: BookFreshnessInput): BookFreshnessResult {
   const future = i.maxFutureDriftMs ?? 250;
@@ -104,7 +108,15 @@ export function validateBookFreshness(i: BookFreshnessInput): BookFreshnessResul
 
 export function simulateExactShareFill(levels: PriceLevel[], targetShares: number, side: ExecutableSide, limitPrice?: number): SimulatedFill {
   const requestedShares = Number.isFinite(targetShares) && targetShares > 0 ? targetShares : 0;
-  const xs = levels.filter(x => Number.isFinite(x.price) && Number.isFinite(x.size) && x.price >= 0 && x.size > 0)
+  const invalidPriceLevels = levels.filter(x => !Number.isFinite(x.price) || x.price < 0 || x.price > 1).length;
+  if (invalidPriceLevels > 0) {
+    return {
+      side, requestedShares, filledShares: 0, fullyFilled: false, vwap: 0, notionalUsd: 0,
+      worstPrice: null, limitPrice, priceConstrained: false, bookPricesValid: false,
+      invalidPriceLevels, levelsConsumed: [],
+    };
+  }
+  const xs = levels.filter(x => Number.isFinite(x.size) && x.size > 0)
     .map(x => ({ ...x })).sort((a, b) => side === 'BUY' ? a.price - b.price : b.price - a.price);
   let filledShares = 0, notionalUsd = 0, worstPrice: number | null = null, priceConstrained = false;
   const levelsConsumed: FillSlice[] = [];
@@ -122,7 +134,7 @@ export function simulateExactShareFill(levels: PriceLevel[], targetShares: numbe
   }
   const fullyFilled = requestedShares > 0 && filledShares + SHARE_EPS >= requestedShares;
   return { side, requestedShares, filledShares, fullyFilled, vwap: filledShares > 0 ? notionalUsd / filledShares : 0,
-    notionalUsd, worstPrice, limitPrice, priceConstrained, levelsConsumed };
+    notionalUsd, worstPrice, limitPrice, priceConstrained, bookPricesValid: true, invalidPriceLevels: 0, levelsConsumed };
 }
 
 function feeError(m: FeeModel): string | null {
@@ -174,8 +186,14 @@ export function calculateExecutableQuote(i: ExecutableQuoteInput): ExecutableArb
   const books = validateBookFreshness({ nowMs: i.nowMs, yesTimestampMs: i.yesBook.timestampMs, noTimestampMs: i.noBook.timestampMs,
     maxBookAgeMs: i.maxBookAgeMs, maxBookSkewMs: i.maxBookSkewMs, maxFutureDriftMs: i.maxFutureDriftMs });
   if (!books.fresh) reasons.push(...books.reasons);
+  if (hasInvalidBookPrice(i.yesBook)) reasons.push('INVALID_YES_BOOK_PRICE');
+  if (hasInvalidBookPrice(i.noBook)) reasons.push('INVALID_NO_BOOK_PRICE');
   if (!(Number.isFinite(s) && s > 0)) reasons.push('INVALID_TARGET_PAIR_SHARES');
-  if (![i.costs.expectedGasUsd, i.costs.worstCaseGasUsd, i.costs.expectedOtherCostsUsd ?? 0, i.costs.worstCaseOtherCostsUsd ?? 0].every(nn)) reasons.push('INVALID_EXECUTION_COSTS');
+  const expectedGas = i.costs.expectedGasUsd, worstGas = i.costs.worstCaseGasUsd;
+  const expectedOther = i.costs.expectedOtherCostsUsd ?? 0, worstOther = i.costs.worstCaseOtherCostsUsd ?? 0;
+  if (![expectedGas, worstGas, expectedOther, worstOther].every(nn)) reasons.push('INVALID_EXECUTION_COSTS');
+  if (nn(expectedGas) && nn(worstGas) && worstGas < expectedGas) reasons.push('WORST_CASE_GAS_BELOW_EXPECTED');
+  if (nn(expectedOther) && nn(worstOther) && worstOther < expectedOther) reasons.push('WORST_CASE_OTHER_COSTS_BELOW_EXPECTED');
   const ye = feeError(i.yesFee), ne = feeError(i.noFee); if (ye) reasons.push('YES_' + ye); if (ne) reasons.push('NO_' + ne);
   const yl = side === 'BUY' ? i.yesBook.asks : i.yesBook.bids, nl = side === 'BUY' ? i.noBook.asks : i.noBook.bids;
   const yu = simulateExactShareFill(yl, s, side), nu = simulateExactShareFill(nl, s, side), slip = i.maxAdverseSlippageBps ?? 0;
@@ -186,11 +204,11 @@ export function calculateExecutableQuote(i: ExecutableQuoteInput): ExecutableArb
   if (!yf.fullyFilled) reasons.push('INSUFFICIENT_YES_DEPTH'); if (!nf.fullyFilled) reasons.push('INSUFFICIENT_NO_DEPTH');
   const yef = expectedFee(i.yesFee, yf), nef = expectedFee(i.noFee, nf), ywf = worstFee(i.yesFee, yf, yLimit), nwf = worstFee(i.noFee, nf, nLimit);
   const expectedFeesUsd = yef === null || nef === null ? null : yef + nef, worstCaseFeesUsd = ywf === null || nwf === null ? null : ywf + nwf;
-  const eo = i.costs.expectedOtherCostsUsd ?? 0, wo = i.costs.worstCaseOtherCostsUsd ?? 0, pair = Number.isFinite(s) && s > 0 ? s : 0;
+  const eo = expectedOther, wo = worstOther, pair = Number.isFinite(s) && s > 0 ? s : 0;
   const expTwo = yf.notionalUsd + nf.notionalUsd, worstTwo = s > 0 ? s * (yLimit + nLimit) : 0;
   const eg = i.type === 'long' ? pair - expTwo : expTwo - pair, wg = i.type === 'long' ? pair - worstTwo : worstTwo - pair;
-  const en = expectedFeesUsd === null ? -Infinity : eg - expectedFeesUsd - i.costs.expectedGasUsd - eo;
-  const wn = worstCaseFeesUsd === null ? -Infinity : wg - worstCaseFeesUsd - i.costs.worstCaseGasUsd - wo;
+  const en = expectedFeesUsd === null ? -Infinity : eg - expectedFeesUsd - expectedGas - eo;
+  const wn = worstCaseFeesUsd === null ? -Infinity : wg - worstCaseFeesUsd - worstGas - wo;
   const eb = pair > 0 && Number.isFinite(en) ? en / pair * 10_000 : -Infinity, wb = pair > 0 && Number.isFinite(wn) ? wn / pair * 10_000 : -Infinity;
   const t = i.thresholds ?? {}, ep = t.minExpectedNetProfitUsd ?? 0, wp = t.minWorstCaseNetProfitUsd ?? 0, ee = t.minExpectedNetEdgeBps ?? 0, we = t.minWorstCaseNetEdgeBps ?? 0;
   if (!strictGt(en, ep, USD_EPS)) reasons.push('EXPECTED_NET_PROFIT_BELOW_THRESHOLD');
@@ -201,8 +219,8 @@ export function calculateExecutableQuote(i: ExecutableQuoteInput): ExecutableArb
     tokenId, side, targetShares: s, fullyFillable: f.fullyFilled, expectedVwap: f.vwap, expectedNotionalUsd: f.notionalUsd,
     worstPriceConsumed: f.worstPrice, executionLimitPrice: limit, expectedFeeUsd: ef, worstCaseFeeUsd: wf, depthConsumed: f.levelsConsumed });
   return { type: i.type, targetPairShares: s, expectedNetProfitUsd: en, worstCaseNetProfitUsd: wn, expectedNetEdgeBps: eb, worstCaseNetEdgeBps: wb,
-    expectedGrossProfitUsd: eg, worstCaseGrossProfitUsd: wg, expectedFeesUsd, worstCaseFeesUsd, expectedGasUsd: i.costs.expectedGasUsd,
-    worstCaseGasUsd: i.costs.worstCaseGasUsd, expectedOtherCostsUsd: eo, worstCaseOtherCostsUsd: wo,
+    expectedGrossProfitUsd: eg, worstCaseGrossProfitUsd: wg, expectedFeesUsd, worstCaseFeesUsd, expectedGasUsd: expectedGas,
+    worstCaseGasUsd: worstGas, expectedOtherCostsUsd: eo, worstCaseOtherCostsUsd: wo,
     yesLeg: leg(i.yesTokenId, yf, yLimit, yef, ywf), noLeg: leg(i.noTokenId, nf, nLimit, nef, nwf), books,
     safeToExecute: reasons.length === 0, rejectionReasons: [...new Set(reasons)], createdAt: i.nowMs };
 }
