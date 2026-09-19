@@ -79,8 +79,12 @@ export interface BacktestConfig {
   gasCostUsd?: number;
   /** Maximum pair size per trade. */
   maxTradeSize?: number;
-  /** Minimum net PnL in USD required to take a signal. */
+  /** Minimum net PnL in USD required by both expected and worst-case gates. */
   minNetProfitUsd?: number;
+  /** Adverse slippage applied by the shared executable-edge engine. */
+  maxAdverseSlippageBps?: number;
+  /** Exact-share search step used when finding the largest safe pair size. */
+  sizeStepShares?: number;
 }
 
 /**
