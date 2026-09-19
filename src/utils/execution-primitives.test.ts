@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  executeExactShareFok,
   reconcileExactShareFok,
   validateExactShareFokRequest,
   validateFeeQuote,
   type ExactShareFokRequest,
   type ExecutionFill,
+  type ExactShareFokAdapter,
   type OrderSubmission,
 } from './execution-primitives.js';
 
@@ -18,7 +20,7 @@ const REQ: ExactShareFokRequest = {
 
 const ACCEPTED: OrderSubmission = {
   clientOrderId: REQ.clientOrderId,
-  accepted: true,
+  status: 'ACCEPTED',
   orderId: 'order-1',
 };
 
@@ -169,7 +171,7 @@ describe('reconcileExactShareFok', () => {
   it('returns rejected without pretending there was a fill', () => {
     const r = reconcileExactShareFok(
       REQ,
-      { clientOrderId: REQ.clientOrderId, accepted: false, error: 'venue rejected' },
+      { clientOrderId: REQ.clientOrderId, status: 'REJECTED', error: 'venue rejected' },
       [fill()]
     );
     expect(r.status).toBe('REJECTED');
@@ -187,7 +189,29 @@ describe('reconcileExactShareFok', () => {
     expect(r.safeToContinue).toBe(false);
     expect(r.reasons).toContain('SUBMISSION_CLIENT_ORDER_ID_MISMATCH');
   });
+
+  it('treats unknown submission state as unsafe even if no fills are visible', () => {
+    const r = reconcileExactShareFok(
+      REQ,
+      { clientOrderId: REQ.clientOrderId, status: 'UNKNOWN', error: 'timeout' },
+      []
+    );
+    expect(r.status).toBe('UNKNOWN');
+    expect(r.safeToContinue).toBe(false);
+    expect(r.reasons).toContain('SUBMISSION_STATE_UNKNOWN');
+  });
+
+  it('treats rejected submission with fill evidence as a conflict', () => {
+    const r = reconcileExactShareFok(
+      REQ,
+      { clientOrderId: REQ.clientOrderId, status: 'REJECTED', orderId: 'order-1' },
+      [fill()]
+    );
+    expect(r.safeToContinue).toBe(false);
+    expect(r.reasons).toContain('SUBMISSION_FILL_CONFLICT');
+  });
 });
+
 
 describe('validateFeeQuote', () => {
   it('accepts known fee quote with conservative worst case', () => {
@@ -212,5 +236,67 @@ describe('validateFeeQuote', () => {
     });
     expect(r.valid).toBe(false);
     expect(r.reasons).toContain('WORST_CASE_FEE_BELOW_EXPECTED');
+  });
+});
+
+describe('executeExactShareFok adapter orchestration', () => {
+  it('uses an injected mock adapter and returns a reconciled exact fill', async () => {
+    const adapter: ExactShareFokAdapter = {
+      submit: async request => ({
+        clientOrderId: request.clientOrderId,
+        status: 'ACCEPTED',
+        orderId: 'order-1',
+      }),
+      getFills: async () => [fill()],
+    };
+    const r = await executeExactShareFok(REQ, adapter);
+    expect(r.status).toBe('FILLED');
+    expect(r.safeToContinue).toBe(true);
+  });
+
+  it('does not call the adapter for an invalid request', async () => {
+    let called = false;
+    const adapter: ExactShareFokAdapter = {
+      submit: async request => {
+        called = true;
+        return { clientOrderId: request.clientOrderId, status: 'ACCEPTED' };
+      },
+      getFills: async () => {
+        called = true;
+        return [];
+      },
+    };
+    const r = await executeExactShareFok({ ...REQ, shares: 0 }, adapter);
+    expect(called).toBe(false);
+    expect(r.status).toBe('REJECTED');
+    expect(r.safeToContinue).toBe(false);
+  });
+
+  it('fails closed when submission throws because venue state is unknown', async () => {
+    const adapter: ExactShareFokAdapter = {
+      submit: async () => { throw new Error('transport timeout'); },
+      getFills: async () => [],
+    };
+    const r = await executeExactShareFok(REQ, adapter);
+    expect(r.status).toBe('UNKNOWN');
+    expect(r.safeToContinue).toBe(false);
+    expect(r.reconciliationComplete).toBe(false);
+    expect(r.reasons).toContain('SUBMISSION_STATE_UNKNOWN');
+  });
+
+  it('fails closed when fill reconciliation throws', async () => {
+    const adapter: ExactShareFokAdapter = {
+      submit: async request => ({
+        clientOrderId: request.clientOrderId,
+        status: 'ACCEPTED',
+        orderId: 'order-1',
+      }),
+      getFills: async () => { throw new Error('trade endpoint unavailable'); },
+    };
+    const r = await executeExactShareFok(REQ, adapter);
+    expect(r.status).toBe('UNKNOWN');
+    expect(r.safeToContinue).toBe(false);
+    expect(r.reconciliationComplete).toBe(false);
+    expect(r.reasons).toContain('FILL_RECONCILIATION_FAILED');
   });
 });
