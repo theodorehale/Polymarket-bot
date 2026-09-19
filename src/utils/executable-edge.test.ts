@@ -45,6 +45,40 @@ function baseLongInput(overrides: Partial<ExecutableQuoteInput> = {}): Executabl
   };
 }
 
+function baseShortInput(overrides: Partial<ExecutableQuoteInput> = {}): ExecutableQuoteInput {
+  const nowMs = 1_700_000_000_000;
+  return {
+    type: 'short',
+    yesTokenId: 'YES',
+    noTokenId: 'NO',
+    yesBook: {
+      bids: [{ price: 0.60, size: 100 }],
+      asks: [{ price: 0.61, size: 100 }],
+      timestampMs: nowMs - 100,
+    },
+    noBook: {
+      bids: [{ price: 0.55, size: 100 }],
+      asks: [{ price: 0.56, size: 100 }],
+      timestampMs: nowMs - 120,
+    },
+    targetPairShares: 10,
+    yesFee: ZERO_FEE,
+    noFee: ZERO_FEE,
+    costs: { expectedGasUsd: 0, worstCaseGasUsd: 0 },
+    nowMs,
+    maxBookAgeMs: 1_000,
+    maxBookSkewMs: 500,
+    maxAdverseSlippageBps: 0,
+    thresholds: {
+      minExpectedNetProfitUsd: 0,
+      minWorstCaseNetProfitUsd: 0,
+      minExpectedNetEdgeBps: 0,
+      minWorstCaseNetEdgeBps: 0,
+    },
+    ...overrides,
+  };
+}
+
 describe('simulateExactShareFill', () => {
   it('fills a single level exactly', () => {
     const r = simulateExactShareFill([{ price: 0.4, size: 10 }], 5, 'BUY');
@@ -59,6 +93,14 @@ describe('simulateExactShareFill', () => {
     expect(r.fullyFilled).toBe(true);
     expect(r.vwap).toBeCloseTo(0.46, 12);
     expect(r.notionalUsd).toBeCloseTo(2.3, 12);
+    expect(r.levelsConsumed).toHaveLength(2);
+  });
+
+  it('calculates multi-level SELL VWAP from best bids downward', () => {
+    const r = simulateExactShareFill([{ price: 0.6, size: 2 }, { price: 0.5, size: 3 }], 5, 'SELL');
+    expect(r.fullyFilled).toBe(true);
+    expect(r.vwap).toBeCloseTo(0.54, 12);
+    expect(r.notionalUsd).toBeCloseTo(2.7, 12);
     expect(r.levelsConsumed).toHaveLength(2);
   });
 
@@ -80,6 +122,19 @@ describe('simulateExactShareFill', () => {
     expect(r.fullyFilled).toBe(false);
     expect(r.filledShares).toBeCloseTo(2, 12);
     expect(r.priceConstrained).toBe(true);
+  });
+
+  it.each([
+    ['price above one', 1.01],
+    ['negative price', -0.01],
+    ['NaN price', Number.NaN],
+    ['Infinity price', Number.POSITIVE_INFINITY],
+  ])('fails closed on malformed %s', (_label, price) => {
+    const r = simulateExactShareFill([{ price, size: 10 }, { price: 0.5, size: 10 }], 5, 'BUY');
+    expect(r.invalidPrice).toBe(true);
+    expect(r.fullyFilled).toBe(false);
+    expect(r.filledShares).toBe(0);
+    expect(r.levelsConsumed).toHaveLength(0);
   });
 });
 
@@ -207,6 +262,107 @@ describe('calculateExecutableQuote', () => {
     expect(q.expectedNetProfitUsd).toBeGreaterThan(0);
     expect(q.expectedNetProfitUsd).toBeLessThan(1e-9);
     expect(q.safeToExecute).toBe(false);
+  });
+
+  it.each([
+    ['above one', 1.01],
+    ['negative', -0.01],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+  ])('rejects malformed YES book price: %s', (_label, price) => {
+    const input = baseLongInput();
+    const q = calculateExecutableQuote({
+      ...input,
+      yesBook: { ...input.yesBook, asks: [{ price, size: 10 }, ...input.yesBook.asks] },
+    });
+    expect(q.safeToExecute).toBe(false);
+    expect(q.rejectionReasons).toContain('INVALID_YES_BOOK_PRICE');
+  });
+
+  it('rejects malformed NO book price without filtering it away', () => {
+    const input = baseLongInput();
+    const q = calculateExecutableQuote({
+      ...input,
+      noBook: { ...input.noBook, bids: [{ price: 1.2, size: 10 }, ...input.noBook.bids] },
+    });
+    expect(q.safeToExecute).toBe(false);
+    expect(q.rejectionReasons).toContain('INVALID_NO_BOOK_PRICE');
+  });
+
+  it('rejects when worst-case gas is below expected gas', () => {
+    const q = calculateExecutableQuote(baseLongInput({
+      costs: { expectedGasUsd: 0.2, worstCaseGasUsd: 0.1 },
+    }));
+    expect(q.safeToExecute).toBe(false);
+    expect(q.rejectionReasons).toContain('WORST_CASE_GAS_LT_EXPECTED');
+  });
+
+  it('rejects when worst-case other costs are below expected other costs', () => {
+    const q = calculateExecutableQuote(baseLongInput({
+      costs: { expectedGasUsd: 0, worstCaseGasUsd: 0, expectedOtherCostsUsd: 0.2, worstCaseOtherCostsUsd: 0.1 },
+    }));
+    expect(q.safeToExecute).toBe(false);
+    expect(q.rejectionReasons).toContain('WORST_CASE_OTHER_COSTS_LT_EXPECTED');
+  });
+});
+
+describe('calculateExecutableQuote short arbitrage', () => {
+  it('accepts a profitable short quote', () => {
+    const q = calculateExecutableQuote(baseShortInput());
+    expect(q.expectedGrossProfitUsd).toBeCloseTo(1.5, 12);
+    expect(q.expectedNetProfitUsd).toBeGreaterThan(0);
+    expect(q.safeToExecute).toBe(true);
+  });
+
+  it('uses multi-level SELL VWAP for both legs', () => {
+    const nowMs = 1_700_000_000_000;
+    const q = calculateExecutableQuote(baseShortInput({
+      targetPairShares: 5,
+      yesBook: { bids: [{ price: 0.65, size: 2 }, { price: 0.55, size: 3 }], asks: [{ price: 0.66, size: 10 }], timestampMs: nowMs - 20 },
+      noBook: { bids: [{ price: 0.60, size: 1 }, { price: 0.50, size: 4 }], asks: [{ price: 0.61, size: 10 }], timestampMs: nowMs - 20 },
+    }));
+    expect(q.yesLeg.expectedVwap).toBeCloseTo(0.59, 12);
+    expect(q.noLeg.expectedVwap).toBeCloseTo(0.52, 12);
+    expect(q.safeToExecute).toBe(true);
+  });
+
+  it('rejects when short worst-case floors destroy the edge', () => {
+    const q = calculateExecutableQuote(baseShortInput({ maxAdverseSlippageBps: 1_500 }));
+    expect(q.expectedNetProfitUsd).toBeGreaterThan(0);
+    expect(q.worstCaseNetProfitUsd).toBeLessThan(0);
+    expect(q.safeToExecute).toBe(false);
+    expect(q.rejectionReasons).toContain('WORST_CASE_NET_PROFIT_BELOW_THRESHOLD');
+  });
+
+  it('rejects when short fees eat the edge', () => {
+    const fee: FeeModel = { status: 'known', kind: 'flat_bps', rateBps: 200 };
+    const nowMs = 1_700_000_000_000;
+    const q = calculateExecutableQuote(baseShortInput({
+      yesBook: { bids: [{ price: 0.505, size: 100 }], asks: [{ price: 0.51, size: 100 }], timestampMs: nowMs - 10 },
+      noBook: { bids: [{ price: 0.505, size: 100 }], asks: [{ price: 0.51, size: 100 }], timestampMs: nowMs - 10 },
+      yesFee: fee,
+      noFee: fee,
+    }));
+    expect(q.expectedGrossProfitUsd).toBeGreaterThan(0);
+    expect(q.expectedNetProfitUsd).toBeLessThan(0);
+    expect(q.safeToExecute).toBe(false);
+  });
+
+  it('rejects short quote with insufficient bid depth', () => {
+    const input = baseShortInput({ targetPairShares: 10 });
+    const q = calculateExecutableQuote({
+      ...input,
+      noBook: { ...input.noBook, bids: [{ price: 0.55, size: 5 }] },
+    });
+    expect(q.safeToExecute).toBe(false);
+    expect(q.rejectionReasons).toContain('INSUFFICIENT_NO_DEPTH');
+  });
+
+  it('targets exact equal YES/NO shares for short quotes', () => {
+    const q = calculateExecutableQuote(baseShortInput({ targetPairShares: 7 }));
+    expect(q.yesLeg.targetShares).toBeCloseTo(7, 12);
+    expect(q.noLeg.targetShares).toBeCloseTo(7, 12);
+    expect(q.safeToExecute).toBe(true);
   });
 });
 
