@@ -1,16 +1,20 @@
 /**
  * Backtest Replay Engine (PROBLEMS.md P11)
  *
- * Replays orderbook snapshots through a strategy. Fills use a simple taker
- * model: long buys YES+NO at the touch, merges to $1; short sells the pair
- * at the touch. Every leg pays `feeRateBps` on notional, every round-trip
- * pays `gasCostUsd`. Signals whose fee-and-gas-adjusted net is below
- * `minNetProfitUsd` are skipped — mirroring the live `ArbitrageService`
- * net-profit gate.
+ * Replays historical snapshots through the same pure executable-edge engine
+ * used to decide whether a YES/NO pair is safe to execute. The replay layer
+ * only adapts snapshot data into ExecutableBook inputs and records accepted
+ * quotes as BacktestTrade rows.
  */
 
-import { getEffectivePrices, estimateTakerFee } from '../utils/price-utils.js';
+import { getEffectivePrices } from '../utils/price-utils.js';
 import type { PriceLevel } from '../utils/price-utils.js';
+import {
+  findSafePairSize,
+  type ExecutableBook,
+  type ExecutableQuoteInput,
+  type FeeModel,
+} from '../utils/executable-edge.js';
 import { summarizeTrades } from './metrics.js';
 import type {
   BacktestConfig,
@@ -25,9 +29,7 @@ export interface BacktestResult {
   metrics: BacktestMetrics;
 }
 
-/**
- * Fee-aware long-arb strategy mirroring live detection: buy YES+NO, merge $1.
- */
+/** Fee-aware signal generation remains strategy-level; execution is gated later. */
 export function longArbStrategy(
   snapshot: BacktestSnapshot,
   _index: number,
@@ -39,17 +41,15 @@ export function longArbStrategy(
     snapshot.noAsk,
     snapshot.noBid
   );
-  const cost = e.effectiveBuyYes + e.effectiveBuyNo;
-  const profit = 1 - cost;
-  if (profit > (opts.profitThreshold ?? 0)) {
-    return { type: 'long', size: Number.POSITIVE_INFINITY };
-  }
-  return { type: 'flat', size: 0 };
+  const profit = 1 - (e.effectiveBuyYes + e.effectiveBuyNo);
+  return profit > (opts.profitThreshold ?? 0)
+    ? { type: 'long', size: Number.POSITIVE_INFINITY }
+    : { type: 'flat', size: 0 };
 }
 
 /**
- * Walk a best-first ladder, filling up to `size`.
- * Returns filled size and total notional (VWAP = notional / filled).
+ * Legacy helper retained for callers/tests. New replay execution does not use
+ * this helper; exact-share fills are performed by executable-edge.ts.
  */
 export function fillLadder(
   levels: PriceLevel[],
@@ -67,9 +67,99 @@ export function fillLadder(
   return { filled, notional };
 }
 
-/** Total executable size resting on a ladder. */
+/** Total positive finite size resting on a ladder. */
 export function ladderSize(levels: PriceLevel[]): number {
-  return levels.reduce((s, l) => s + (Number.isFinite(l.size) && l.size > 0 ? l.size : 0), 0);
+  return levels.reduce(
+    (sum, level) => sum + (Number.isFinite(level.size) && level.size > 0 ? level.size : 0),
+    0
+  );
+}
+
+function touchLevel(price: number, size: number | undefined, fallbackSize: number): PriceLevel[] {
+  return [{ price, size: size ?? fallbackSize }];
+}
+
+function booksFromSnapshot(
+  snapshot: BacktestSnapshot,
+  fallbackSize: number
+): { yesBook: ExecutableBook; noBook: ExecutableBook } {
+  const levels = snapshot.levels;
+  return {
+    yesBook: {
+      asks: levels?.yesAsks ?? touchLevel(snapshot.yesAsk, snapshot.yesAskSize, fallbackSize),
+      bids: levels?.yesBids ?? touchLevel(snapshot.yesBid, snapshot.yesBidSize, fallbackSize),
+      timestampMs: snapshot.ts,
+    },
+    noBook: {
+      asks: levels?.noAsks ?? touchLevel(snapshot.noAsk, snapshot.noAskSize, fallbackSize),
+      bids: levels?.noBids ?? touchLevel(snapshot.noBid, snapshot.noBidSize, fallbackSize),
+      timestampMs: snapshot.ts,
+    },
+  };
+}
+
+function feeModel(rateBps: number): FeeModel {
+  return rateBps === 0
+    ? { status: 'known', kind: 'zero' }
+    : { status: 'known', kind: 'flat_bps', rateBps };
+}
+
+/**
+ * Convert one backtest signal into the shared executable-edge input and find
+ * the largest safe exact-share pair. This is the replay/live math boundary:
+ * replay must not independently recompute VWAP, fees, worst case, or net edge.
+ */
+export function quoteBacktestSignal(
+  snapshot: BacktestSnapshot,
+  signal: ReturnType<BacktestStrategy>,
+  config: BacktestConfig = {}
+) {
+  if (signal.type === 'flat' || !(signal.size > 0)) return null;
+
+  const maxTradeSize = config.maxTradeSize ?? 100;
+  const maxPairShares = Math.min(signal.size, maxTradeSize);
+  if (!(Number.isFinite(maxPairShares) && maxPairShares > 0)) return null;
+
+  const feeRateBps = config.feeRateBps ?? 0;
+  const gasCostUsd = config.gasCostUsd ?? 0;
+  const minNetProfitUsd = config.minNetProfitUsd ?? 0;
+  const maxAdverseSlippageBps = config.maxAdverseSlippageBps ?? 0;
+  const sizeStepShares = config.sizeStepShares ?? 0.01;
+  const { yesBook, noBook } = booksFromSnapshot(snapshot, maxTradeSize);
+
+  const shared: Omit<ExecutableQuoteInput, 'targetPairShares'> = {
+    type: signal.type,
+    yesTokenId: 'BACKTEST_YES',
+    noTokenId: 'BACKTEST_NO',
+    yesBook,
+    noBook,
+    yesFee: feeModel(feeRateBps),
+    noFee: feeModel(feeRateBps),
+    costs: {
+      expectedGasUsd: gasCostUsd,
+      worstCaseGasUsd: gasCostUsd,
+      expectedOtherCostsUsd: 0,
+      worstCaseOtherCostsUsd: 0,
+    },
+    nowMs: snapshot.ts,
+    maxBookAgeMs: 0,
+    maxBookSkewMs: 0,
+    maxFutureDriftMs: 0,
+    maxAdverseSlippageBps,
+    thresholds: {
+      minExpectedNetProfitUsd: minNetProfitUsd,
+      minWorstCaseNetProfitUsd: minNetProfitUsd,
+      minExpectedNetEdgeBps: 0,
+      minWorstCaseNetEdgeBps: 0,
+    },
+  };
+
+  return findSafePairSize({
+    ...shared,
+    maxPairShares,
+    minPairShares: Math.min(sizeStepShares, maxPairShares),
+    sizeStepShares,
+  });
 }
 
 export function runBacktest(
@@ -78,101 +168,35 @@ export function runBacktest(
   config: BacktestConfig = {}
 ): BacktestResult {
   const startingEquity = config.startingEquity ?? 250;
-  const feeRateBps = config.feeRateBps ?? 0;
   const gasCostUsd = config.gasCostUsd ?? 0;
-  const maxTradeSize = config.maxTradeSize ?? 100;
-  const minNetProfitUsd = config.minNetProfitUsd ?? 0;
-
   const trades: BacktestTrade[] = [];
 
-  snapshots.forEach((snap, i) => {
-    const signal = strategy(snap, i);
-    if (signal.type === 'flat' || signal.size <= 0) return;
+  snapshots.forEach((snapshot, index) => {
+    const signal = strategy(snapshot, index);
+    const quote = quoteBacktestSignal(snapshot, signal, config);
+    if (!quote?.safeToExecute) return;
 
-    const e = getEffectivePrices(snap.yesAsk, snap.yesBid, snap.noAsk, snap.noBid);
+    const size = quote.targetPairShares;
+    const twoLegNotional =
+      quote.yesLeg.expectedNotionalUsd + quote.noLeg.expectedNotionalUsd;
+    const feeUsd = quote.expectedFeesUsd ?? 0;
 
-    if (signal.type === 'long') {
-      // Depth-aware fill: when multi-level ladders are present (Pendulum
-      // `book` rows), walk both ask ladders at VWAP. This is conservative:
-      // it uses the direct ladders, ignoring the mirror (1 - bid) route the
-      // edge detection considers. Partial fills allowed — size clamps to
-      // what rests on BOTH ladders.
-      const askLevels = snap.levels ? [snap.levels.yesAsks, snap.levels.noAsks] : undefined;
-      if (askLevels && (ladderSize(askLevels[0]) > 0 || ladderSize(askLevels[1]) > 0)) {
-        const size = Math.max(
-          0,
-          Math.min(signal.size, ladderSize(askLevels[0]), ladderSize(askLevels[1]), maxTradeSize)
-        );
-        if (size <= 0) return;
-        // size is clamped to valid ladder depth, so both legs fill fully.
-        const legYes = fillLadder(askLevels[0], size);
-        const legNo = fillLadder(askLevels[1], size);
-        const entryCost = legYes.notional + legNo.notional;
-        const feeUsd =
-          estimateTakerFee(legYes.notional, feeRateBps) +
-          estimateTakerFee(legNo.notional, feeRateBps);
-        const pnl = size - entryCost - feeUsd - gasCostUsd;
-        if (pnl < minNetProfitUsd) return;
-        trades.push({
-          ts: snap.ts,
-          type: 'long',
-          size,
-          entryCost,
-          exitValue: size,
-          feeUsd,
-          gasUsd: gasCostUsd,
-          pnl,
-        });
-        return;
-      }
-      const depth = Math.min(snap.yesAskSize ?? maxTradeSize, snap.noAskSize ?? maxTradeSize);
-      const size = Math.max(0, Math.min(signal.size, depth, maxTradeSize));
-      if (size <= 0) return;
-      const entryCost = (e.effectiveBuyYes + e.effectiveBuyNo) * size;
-      const feeUsd =
-        estimateTakerFee(e.effectiveBuyYes * size, feeRateBps) +
-        estimateTakerFee(e.effectiveBuyNo * size, feeRateBps);
-      const pnl = size - entryCost - feeUsd - gasCostUsd;
-      if (pnl < minNetProfitUsd) return;
-      trades.push({
-        ts: snap.ts,
-        type: 'long',
-        size,
-        entryCost,
-        exitValue: size,
-        feeUsd,
-        gasUsd: gasCostUsd,
-        pnl,
-      });
-    } else {
-      const depth = Math.min(snap.yesBidSize ?? maxTradeSize, snap.noBidSize ?? maxTradeSize);
-      const size = Math.max(0, Math.min(signal.size, depth, maxTradeSize));
-      if (size <= 0) return;
-      const exitValue = (e.effectiveSellYes + e.effectiveSellNo) * size;
-      const feeUsd =
-        estimateTakerFee(e.effectiveSellYes * size, feeRateBps) +
-        estimateTakerFee(e.effectiveSellNo * size, feeRateBps);
-      const pnl = exitValue - size - feeUsd - gasCostUsd;
-      if (pnl < minNetProfitUsd) return;
-      trades.push({
-        ts: snap.ts,
-        type: 'short',
-        size,
-        entryCost: size,
-        exitValue,
-        feeUsd,
-        gasUsd: gasCostUsd,
-        pnl,
-      });
-    }
+    trades.push({
+      ts: snapshot.ts,
+      type: quote.type,
+      size,
+      entryCost: quote.type === 'long' ? twoLegNotional : size,
+      exitValue: quote.type === 'long' ? size : twoLegNotional,
+      feeUsd,
+      gasUsd: gasCostUsd,
+      pnl: quote.expectedNetProfitUsd,
+    });
   });
 
   return { trades, metrics: summarizeTrades(trades, startingEquity) };
 }
 
-/**
- * Parse a JSONL string into snapshots (skips blank lines; throws on invalid).
- */
+/** Parse a JSONL string into snapshots (skips blank lines; throws on invalid). */
 export function parseSnapshotsJsonl(jsonl: string): BacktestSnapshot[] {
   const out: BacktestSnapshot[] = [];
   for (const line of jsonl.split('\n')) {
