@@ -59,7 +59,12 @@ async function main() {
   // Initialize SDK
   await sdk.initialize();
 
-  // Get wallet address
+  // Get wallet address. initialize() should create the authenticated
+  // trading service when PRIVATE_KEY is present, but keep this script
+  // fail-closed if that invariant ever changes.
+  if (!sdk.tradingService) {
+    throw new Error('Trading service unavailable after authenticated initialization');
+  }
   const address = sdk.tradingService.getAddress();
   console.log(`Wallet: ${address}`);
   console.log('');
