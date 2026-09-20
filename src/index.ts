@@ -413,7 +413,7 @@ export class PolymarketSDK {
   // API Clients
   public readonly dataApi: DataApiClient;
   public readonly gammaApi: GammaApiClient;
-  public readonly tradingService: TradingService;
+  public readonly tradingService: TradingService | null;
   public readonly subgraph: SubgraphClient;
 
   // Services
@@ -438,13 +438,16 @@ export class PolymarketSDK {
     this.dataApi = new DataApiClient(this.rateLimiter, this.cache);
     this.gammaApi = new GammaApiClient(this.rateLimiter, this.cache);
 
-    // TradingService requires a private key - use provided key or dummy key for read-only
-    const privateKey = config.privateKey || '0x' + '1'.repeat(64);
-    this.tradingService = new TradingService(this.rateLimiter, this.cache, {
-      privateKey,
-      chainId: config.chainId,
-      credentials: config.creds,
-    });
+    // Credential-free/read-only mode must not construct a Wallet or an
+    // authenticated trading client. TradingService is created only when the
+    // caller explicitly provides a private key.
+    this.tradingService = config.privateKey
+      ? new TradingService(this.rateLimiter, this.cache, {
+          privateKey: config.privateKey,
+          chainId: config.chainId,
+          credentials: config.creds,
+        })
+      : null;
 
     this.subgraph = new SubgraphClient(this.rateLimiter, this.cache);
 
@@ -456,7 +459,7 @@ export class PolymarketSDK {
     this.smartMoney = new SmartMoneyService(
       this.wallets,
       this.realtime,
-      this.tradingService,
+      this.tradingService as TradingService,
       {},  // default config
       this.dataApi  // pass dataApi for report generation
     );
@@ -466,7 +469,7 @@ export class PolymarketSDK {
     // Initialize DipArbService
     this.dipArb = new DipArbService(
       this.realtime,
-      this.tradingService,
+      this.tradingService as TradingService,
       this.markets,
       config.privateKey,
       config.chainId
@@ -497,6 +500,9 @@ export class PolymarketSDK {
    */
   async initialize(): Promise<void> {
     if (this._initialized) return;
+    if (!this.tradingService) {
+      throw new Error('Trading initialization requires an explicit private key');
+    }
     await this.tradingService.initialize();
     this._initialized = true;
   }
