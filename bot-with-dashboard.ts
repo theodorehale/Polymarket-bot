@@ -1476,8 +1476,10 @@ async function main() {
   startDashboard({ port: 3001, token: dashToken });
   console.log(`\n🌐 Dashboard: http://localhost:3001${dashToken ? `/?token=${dashToken}` : ''}\n`);
 
-  if (!process.env.POLYMARKET_PRIVATE_KEY) {
-    log('ERROR', 'POLYMARKET_PRIVATE_KEY not found');
+  // Dry-run is deliberately credential-free. Only LIVE startup may read
+  // or require a private key.
+  if (!CONFIG.dryRun && !process.env.POLYMARKET_PRIVATE_KEY) {
+    log('ERROR', 'POLYMARKET_PRIVATE_KEY is required for LIVE mode');
     process.exit(1);
   }
 
@@ -1506,25 +1508,29 @@ async function main() {
     updateDashboard();
   }
 
-  const sdk = await PolymarketSDK.create({
-    privateKey: process.env.POLYMARKET_PRIVATE_KEY,
-  });
+  const sdk = CONFIG.dryRun
+    ? await PolymarketSDK.createReadOnly()
+    : await PolymarketSDK.create({ privateKey: process.env.POLYMARKET_PRIVATE_KEY });
   activeSdk = sdk;
 
-  log('INFO', `Wallet: ${sdk.tradingService.getAddress()}`);
+  if (sdk.tradingService) {
+    log('INFO', `Wallet: ${sdk.tradingService.getAddress()}`);
+  } else {
+    log('INFO', 'Credential-free dry run: no wallet or authenticated trading client constructed');
+  }
 
   // Setup all services
   await setupOnchain(); // MUST BE FIRST (Approvals + PnL baseline anchor)
   await setupSwap();
   await setupBinanceAnalysis(sdk);
-  await refreshExposure(sdk); // v3.2: seed exposure BEFORE strategies start
+  if (!CONFIG.dryRun) await refreshExposure(sdk); // chain state is LIVE-only
   await setupSmartMoney(sdk);
   await setupArbitrage(sdk);
   await setupDipArb(sdk);
 
   // v3.2: exposure is chain-seeded every 60s; PnL reconciled every 5 min;
   // session history is upserted every 5 min so a crash loses at most that
-  setInterval(() => void refreshExposure(sdk), 60_000);
+  if (!CONFIG.dryRun) setInterval(() => void refreshExposure(sdk), 60_000);
   setInterval(() => void reconcilePnl(), 5 * 60_000);
   setInterval(() => persistSession(), 5 * 60_000);
 
@@ -1537,7 +1543,7 @@ async function main() {
   await setupDirectTrading(sdk);
 
   // Setup Portfolio Manager (Persistence)
-  await setupPortfolioManager(sdk);
+  if (!CONFIG.dryRun) await setupPortfolioManager(sdk);
 
   // Listen for commands from dashboard — single handler (registered after
   // the SDK exists; the old second handler double-processed commands)
@@ -1547,6 +1553,10 @@ async function main() {
     // subscription at start, so it must be restarted on every flip.
     if (command === 'toggleDryRun') {
       const enable = payload?.enabled === true;
+      if (!enable && !sdk.tradingService) {
+        log('WARN', 'LIVE mode blocked: this process was started credential-free. Restart explicitly in LIVE mode with credentials.');
+        return;
+      }
       if (CONFIG.dryRun !== enable) {
         log('INFO', `Switching to ${enable ? 'DRY RUN' : 'LIVE'} mode... (Requested by user)`);
 
