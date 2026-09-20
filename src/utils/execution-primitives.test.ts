@@ -168,6 +168,40 @@ describe('reconcileExactShareFok', () => {
     expect(r.reasons).toContain('INVALID_FILL_PRICE');
   });
 
+  it('fails closed when a BUY fill exceeds the requested limit price', () => {
+    const r = reconcileExactShareFok(REQ, ACCEPTED, [
+      fill({ price: 0.46 }),
+    ]);
+    expect(r.status).toBe('FILLED');
+    expect(r.safeToContinue).toBe(false);
+    expect(r.reasons).toContain('BUY_FILL_ABOVE_LIMIT');
+  });
+
+  it('fails closed when a SELL fill is below the requested floor price', () => {
+    const sellReq: ExactShareFokRequest = {
+      ...REQ,
+      clientOrderId: 'arb-1-yes-sell',
+      side: 'SELL',
+      limitPrice: 0.55,
+    };
+    const sellSubmission: OrderSubmission = {
+      clientOrderId: sellReq.clientOrderId,
+      status: 'ACCEPTED',
+      orderId: 'order-sell',
+    };
+    const r = reconcileExactShareFok(sellReq, sellSubmission, [
+      fill({
+        tradeId: 'sell-trade',
+        orderId: 'order-sell',
+        side: 'SELL',
+        price: 0.54,
+      }),
+    ]);
+    expect(r.status).toBe('FILLED');
+    expect(r.safeToContinue).toBe(false);
+    expect(r.reasons).toContain('SELL_FILL_BELOW_LIMIT');
+  });
+
   it('returns rejected without pretending there was a fill when no fill evidence exists', () => {
     const r = reconcileExactShareFok(
       REQ,
@@ -251,6 +285,52 @@ describe('executeExactShareFok adapter orchestration', () => {
     };
     const r = await executeExactShareFok(REQ, adapter);
     expect(r.status).toBe('FILLED');
+    expect(r.safeToContinue).toBe(true);
+  });
+
+  it('preserves exact share quantity for BUY without converting it to USD notional', async () => {
+    let submittedShares: number | undefined;
+    const adapter: ExactShareFokAdapter = {
+      submit: async request => {
+        submittedShares = request.shares;
+        return {
+          clientOrderId: request.clientOrderId,
+          status: 'ACCEPTED',
+          orderId: 'order-1',
+        };
+      },
+      getFills: async () => [fill()],
+    };
+    await executeExactShareFok(REQ, adapter);
+    expect(submittedShares).toBe(10);
+  });
+
+  it('preserves exact share quantity for SELL', async () => {
+    const sellReq: ExactShareFokRequest = {
+      ...REQ,
+      clientOrderId: 'arb-sell',
+      side: 'SELL',
+      limitPrice: 0.40,
+    };
+    let submittedShares: number | undefined;
+    const adapter: ExactShareFokAdapter = {
+      submit: async request => {
+        submittedShares = request.shares;
+        return {
+          clientOrderId: request.clientOrderId,
+          status: 'ACCEPTED',
+          orderId: 'order-sell',
+        };
+      },
+      getFills: async () => [fill({
+        tradeId: 'sell',
+        orderId: 'order-sell',
+        side: 'SELL',
+        price: 0.44,
+      })],
+    };
+    const r = await executeExactShareFok(sellReq, adapter);
+    expect(submittedShares).toBe(10);
     expect(r.safeToContinue).toBe(true);
   });
 
