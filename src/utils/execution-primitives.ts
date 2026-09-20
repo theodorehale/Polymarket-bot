@@ -103,6 +103,60 @@ export type ExecutionFeeQuoteProvider = (
   request: ExecutionFeeQuoteRequest
 ) => ExecutionFeeQuote | Promise<ExecutionFeeQuote>;
 
+export type VenueMarketOrderAmountUnit = 'USD_NOTIONAL' | 'SHARES';
+
+/**
+ * The currently used Polymarket market-order API has asymmetric amount units:
+ * BUY amount is quote-currency/USDC notional, while SELL amount is shares.
+ * That contract cannot represent an exact-share BUY without a conversion that
+ * can change the requested quantity after venue rounding/fees.
+ */
+export function getPolymarketMarketOrderAmountUnit(side: ExecutionSide): VenueMarketOrderAmountUnit {
+  return side === 'BUY' ? 'USD_NOTIONAL' : 'SHARES';
+}
+
+export interface ExactShareVenueMapping {
+  supported: boolean;
+  amountUnit: VenueMarketOrderAmountUnit;
+  amount?: number;
+  reason?: string;
+}
+
+/**
+ * Fail-closed mapping for the legacy createAndPostMarketOrder amount field.
+ *
+ * SELL maps exactly: amount == requested shares.
+ * BUY intentionally does not map. Multiplying shares by a limit/estimated
+ * price would produce a USDC-notional request, not a guaranteed exact-share
+ * request, so Phase 3.3 must not pretend those semantics are equivalent.
+ */
+export function mapExactSharesToPolymarketMarketAmount(
+  request: ExactShareFokRequest
+): ExactShareVenueMapping {
+  const validation = validateExactShareFokRequest(request);
+  if (!validation.valid) {
+    return {
+      supported: false,
+      amountUnit: getPolymarketMarketOrderAmountUnit(request.side),
+      reason: 'INVALID_EXACT_SHARE_REQUEST',
+    };
+  }
+
+  if (request.side === 'BUY') {
+    return {
+      supported: false,
+      amountUnit: 'USD_NOTIONAL',
+      reason: 'EXACT_SHARE_BUY_UNSUPPORTED_BY_MARKET_AMOUNT_API',
+    };
+  }
+
+  return {
+    supported: true,
+    amountUnit: 'SHARES',
+    amount: request.shares,
+  };
+}
+
 const EPS = 1e-9;
 
 function validFinitePositive(x: number): boolean {
