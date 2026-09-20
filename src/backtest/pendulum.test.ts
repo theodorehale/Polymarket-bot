@@ -122,8 +122,8 @@ describe('depth-aware fills', () => {
   it('clamps size to resting depth and prices at VWAP, not touch', () => {
     const snaps = pendulumBookRowsToSnapshots(
       [
-        bookRow(1000, YES, [], [[0.4, 5], [0.5, 100]]),
-        bookRow(1000, NO, [], [[0.4, 5], [0.5, 100]]),
+        bookRow(1000, YES, [], [[0.4, 5], [0.44, 100]]),
+        bookRow(1000, NO, [], [[0.4, 5], [0.44, 100]]),
       ],
       YES,
       NO
@@ -133,13 +133,15 @@ describe('depth-aware fills', () => {
     const { trades } = runBacktest(parsed, (s, i) => longArbStrategy(s, i), {
       gasCostUsd: 0,
       maxTradeSize: 10,
+      // Permit the second resting level while keeping worst-case pair cost < $1.
+      maxAdverseSlippageBps: 1000,
     });
     expect(trades).toHaveLength(1);
     expect(trades[0].size).toBe(10);
-    // VWAP per leg: (0.4*5 + 0.5*5)/10 = 0.45 → entry 9, pnl 1.
+    // VWAP per leg: (0.4*5 + 0.44*5)/10 = 0.42 → entry 8.4, pnl 1.6.
     // Touch-only model would claim entry 8, pnl 2.
-    expect(trades[0].entryCost).toBeCloseTo(9, 10);
-    expect(trades[0].pnl).toBeCloseTo(1, 10);
+    expect(trades[0].entryCost).toBeCloseTo(8.4, 10);
+    expect(trades[0].pnl).toBeCloseTo(1.6, 10);
   });
 });
 
