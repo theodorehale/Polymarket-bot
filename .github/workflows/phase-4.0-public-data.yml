@@ -1,0 +1,40 @@
+name: Phase 4.0 Public Data Safety Gate
+
+on:
+  push:
+    branches:
+      - phase-4.0-live-public-data-zero-execution
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: TypeScript build
+        run: pnpm run build
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Explicit Phase 4.0 safe-path tests
+        run: pnpm exec vitest run src/paper/public-orderbook-adapter.test.ts src/paper/public-market-observer.test.ts src/paper/observation-stats.test.ts src/paper/paper-arbitrage-scanner.test.ts src/utils/executable-edge.test.ts src/utils/execution-primitives.test.ts
