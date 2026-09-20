@@ -459,7 +459,7 @@ export class PolymarketSDK {
     this.smartMoney = new SmartMoneyService(
       this.wallets,
       this.realtime,
-      this.tradingService as TradingService,
+      this.tradingService,
       {},  // default config
       this.dataApi  // pass dataApi for report generation
     );
@@ -469,7 +469,7 @@ export class PolymarketSDK {
     // Initialize DipArbService
     this.dipArb = new DipArbService(
       this.realtime,
-      this.tradingService as TradingService,
+      this.tradingService,
       this.markets,
       config.privateKey,
       config.chainId
@@ -490,6 +490,17 @@ export class PolymarketSDK {
   static async create(config: PolymarketSDKConfig = {}): Promise<PolymarketSDK> {
     const sdk = new PolymarketSDK(config);
     await sdk.start();
+    return sdk;
+  }
+
+  /**
+   * Create a credential-free SDK for public/read-only data and simulations.
+   * This path never initializes TradingService and never requires a private key.
+   */
+  static async createReadOnly(config: Omit<PolymarketSDKConfig, 'privateKey' | 'creds'> = {}): Promise<PolymarketSDK> {
+    const sdk = new PolymarketSDK(config);
+    sdk.connect();
+    await sdk.waitForConnection(10000);
     return sdk;
   }
 
