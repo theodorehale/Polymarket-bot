@@ -790,7 +790,7 @@ interface CopyRecommendation {
 export class SmartMoneyService {
   private walletService: WalletService;
   private realtimeService: RealtimeServiceV2;
-  private tradingService: TradingService;
+  private tradingService: TradingService | null;
   private dataApi: DataApiClient | null;
   private leaderboardProvider: LeaderboardProvider | null;
   private config: Required<Pick<SmartMoneyServiceConfig, 'minPnl' | 'cacheTtl'>> &
@@ -809,7 +809,7 @@ export class SmartMoneyService {
   constructor(
     walletService: WalletService,
     realtimeService: RealtimeServiceV2,
-    tradingService: TradingService,
+    tradingService: TradingService | null,
     config: SmartMoneyServiceConfig = {},
     dataApi?: DataApiClient,
     leaderboardProvider?: LeaderboardProvider
@@ -1335,6 +1335,9 @@ export class SmartMoneyService {
               copy: { size: copySize.toFixed(2), usdc: usdcAmount.toFixed(2) },
             });
           } else {
+            if (!this.tradingService) {
+              throw new Error('LIVE_COPY_TRADING_REQUIRES_AUTHENTICATED_TRADING_SERVICE');
+            }
             result = await this.tradingService.createMarketOrder({
               tokenId,
               side: trade.side,
