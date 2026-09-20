@@ -32,6 +32,13 @@ export interface OrderSubmission {
 }
 
 export interface ExactShareFokAdapter {
+  /**
+   * Submit an order whose quantity is expressed in SHARES for both BUY and SELL.
+   *
+   * An adapter MUST NOT forward `shares` into a venue field whose BUY-side
+   * semantics are quote-currency/notional. If the venue SDK cannot guarantee
+   * exact-share FOK semantics for BUY, the adapter must reject/fail closed.
+   */
   submit(request: ValidatedExactShareFokRequest): Promise<OrderSubmission>;
   getFills(
     request: ValidatedExactShareFokRequest,
@@ -256,6 +263,16 @@ export function reconcileExactShareFok(
   }
 
   const averagePrice = filledShares > EPS ? notionalUsd / filledShares : null;
+
+  // A fill at a price outside the requested FOK limit is a protocol/adapter
+  // violation even if the venue reports the exact requested quantity.
+  if (request.side === 'BUY' && averagePrice !== null && averagePrice > request.limitPrice + EPS) {
+    reasons.push('BUY_FILL_ABOVE_LIMIT');
+  }
+  if (request.side === 'SELL' && averagePrice !== null && averagePrice + EPS < request.limitPrice) {
+    reasons.push('SELL_FILL_BELOW_LIMIT');
+  }
+
   const fullyFilled = Math.abs(filledShares - request.shares) <= EPS;
   const overfilled = filledShares > request.shares + EPS;
   const partial = filledShares > EPS && filledShares < request.shares - EPS;
