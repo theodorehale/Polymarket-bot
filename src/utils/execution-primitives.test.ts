@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   executeExactShareFok,
+  getPolymarketMarketOrderAmountUnit,
+  mapExactSharesToPolymarketMarketAmount,
   reconcileExactShareFok,
   validateExactShareFokRequest,
   validateFeeQuote,
@@ -54,6 +56,34 @@ describe('validateExactShareFokRequest', () => {
   ])('fails closed on %s', (_label, patch) => {
     const r = validateExactShareFokRequest({ ...REQ, ...patch });
     expect(r.valid).toBe(false);
+  });
+});
+
+describe('Polymarket market-order amount semantics', () => {
+  it('models BUY amount as USD notional and SELL amount as shares', () => {
+    expect(getPolymarketMarketOrderAmountUnit('BUY')).toBe('USD_NOTIONAL');
+    expect(getPolymarketMarketOrderAmountUnit('SELL')).toBe('SHARES');
+  });
+
+  it('fails closed instead of converting exact-share BUY into USD amount', () => {
+    const r = mapExactSharesToPolymarketMarketAmount(REQ);
+    expect(r.supported).toBe(false);
+    expect(r.amountUnit).toBe('USD_NOTIONAL');
+    expect(r.amount).toBeUndefined();
+    expect(r.reason).toBe('EXACT_SHARE_BUY_UNSUPPORTED_BY_MARKET_AMOUNT_API');
+  });
+
+  it('maps exact-share SELL directly to venue shares', () => {
+    const r = mapExactSharesToPolymarketMarketAmount({
+      ...REQ,
+      clientOrderId: 'sell-map',
+      side: 'SELL',
+    });
+    expect(r).toEqual({
+      supported: true,
+      amountUnit: 'SHARES',
+      amount: 10,
+    });
   });
 });
 
