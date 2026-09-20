@@ -613,6 +613,14 @@ export class PolymarketSDK {
    * 使用有效价格计算套利机会（正确考虑镜像订单）
    * 详细文档见: docs/01-polymarket-orderbook-arbitrage.md
    */
+  /**
+   * @deprecated INDICATIVE ONLY — this legacy helper uses top-level effective
+   * prices and MUST NOT be used as an execution signal.
+   *
+   * Executable/paper-trading decisions must flow through the executable-edge
+   * engine (calculateExecutableQuote) so depth/VWAP, fees, slippage, gas,
+   * freshness and worst-case gates are applied consistently.
+   */
   async detectArbitrage(
     conditionId: string,
     threshold = 0.005
