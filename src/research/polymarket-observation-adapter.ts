@@ -24,6 +24,7 @@ export interface PolymarketUniversalAdapterInput {
   sampling: SamplingMetadata;
   relationshipVerification: UniversalObservationV1['relationship']['verification'];
   nativeSettlementCurrency: string;
+  fxEvidenceReference?: string;
   versions: Omit<VersionMetadata, 'schemaVersion' | 'promptVersion'> & {
     promptVersion?: string;
   };
@@ -75,7 +76,7 @@ export function toUniversalPolymarketObservation(
     reasons.push(
       jev.status === 'ACCEPT' ? 'ACCESSIBILITY_NOT_VERIFIED' : 'JEV_REVIEW'
     );
-    if (jev.status === 'ACCEPT') reasons.push('RELATIONSHIP_NOT_VERIFIED');
+
   }
 
   return {
@@ -93,7 +94,7 @@ export function toUniversalPolymarketObservation(
       promptVersion: jev?.promptVersion ?? input.versions.promptVersion,
     },
     provenance: input.provenance,
-    valuation: { nativeSettlementCurrency: input.nativeSettlementCurrency, reportingCurrency: 'USD', conversion: input.nativeSettlementCurrency === 'USD' ? 'NONE' : 'FX' },
+    valuation: { nativeSettlementCurrency: input.nativeSettlementCurrency, reportingCurrency: 'USD', conversion: input.nativeSettlementCurrency === 'USD' ? 'NONE' : 'FX', fxEvidenceReference: input.nativeSettlementCurrency === 'USD' ? undefined : input.fxEvidenceReference },
     sampling: input.sampling,
     relationship: {
       type: 'COMPLEMENT',
