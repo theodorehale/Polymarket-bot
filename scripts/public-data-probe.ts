@@ -21,18 +21,31 @@ async function main(){
   let pagesScanned=0;
   let marketsReturned=0;
   let selected: Awaited<ReturnType<MarketService['getClobMarkets']>>['markets'][number] | undefined;
+  const diagnostic={active:0,notClosed:0,acceptingOrders:0,twoTokens:0,nonEmptyTokenMetadata:0,allConditions:0};
   do {
     const page=await service.getClobMarkets(cursor);
     pagesScanned++;
     marketsReturned+=page.markets.length;
+    for(const m of page.markets){
+      const active=m.active===true,notClosed=m.closed===false,accepting=m.acceptingOrders===true,two=m.tokens.length===2,metadata=m.tokens.every(t=>Boolean(t.tokenId&&t.outcome.trim()));
+      if(active) diagnostic.active++;
+      if(notClosed) diagnostic.notClosed++;
+      if(accepting) diagnostic.acceptingOrders++;
+      if(two) diagnostic.twoTokens++;
+      if(metadata) diagnostic.nonEmptyTokenMetadata++;
+      if(active&&notClosed&&accepting&&two&&metadata) diagnostic.allConditions++;
+    }
     selected=page.markets.find(m=>m.active&&!m.closed&&m.acceptingOrders&&m.tokens.length===2&&m.tokens.every(t=>t.tokenId&&t.outcome.trim()));
     if(selected) break;
     const next=page.nextCursor;
     if(!next||next===cursor) break;
     cursor=next;
   } while(pagesScanned<MAX_DISCOVERY_PAGES);
-  if(!selected) throw new Error(`NO_ELIGIBLE_PUBLIC_MARKET_FOUND_AFTER_${pagesScanned}_PAGES_${marketsReturned}_MARKETS`);
+  if(!selected){
+    process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,diagnostic}},null,2)+'\n');
+    throw new Error(`NO_ELIGIBLE_PUBLIC_MARKET_FOUND_AFTER_${pagesScanned}_PAGES_${marketsReturned}_MARKETS`);
+  }
   const record=await probePublicMarket(service,selected.conditionId);
-  process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,selected:{conditionId:selected.conditionId,slug:selected.marketSlug,question:selected.question}},probe:record},null,2)+'\n');
+  process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,diagnostic,selected:{conditionId:selected.conditionId,slug:selected.marketSlug,question:selected.question}},probe:record},null,2)+'\n');
 }
 main().catch(e=>{process.stderr.write('PROBE_FAILED '+sanitizeExternalError(e)+'\n');process.exitCode=1;});
