@@ -2,7 +2,7 @@
  * P0-hardened market-agnostic research schema.
  * Paper-only: no network, wallet, signer, broker, or order code.
  */
-export const UNIVERSAL_OBSERVATION_SCHEMA_VERSION = 'universal-observation-v1' as const;
+export const UNIVERSAL_OBSERVATION_SCHEMA_VERSION = 'universal-observation-v2' as const;
 
 export type MarketType = 'PREDICTION' | 'FUTURES' | 'OPTIONS' | 'ETF' | 'OTHER';
 export type SamplingGroup = 'CONTROL_RANDOM'|'CONTROL_LIQUID'|'DETERMINISTIC_CANDIDATE'|'JEV_REVIEW'|'JEV_ACCEPT';
@@ -15,6 +15,7 @@ export type RelationshipVerificationStatus = 'VERIFIED'|'UNVERIFIED'|'INVALID'|'
 export type DepthCapability = 'TOP_OF_BOOK'|'FULL_DEPTH'|'PARTIAL_DEPTH'|'UNKNOWN';
 
 export interface MoneyValue { amount: number; currency: string; }
+export interface ValuationMetadata { nativeSettlementCurrency: string; reportingCurrency: string; conversion: 'NONE'|'FX'; fxEvidenceReference?: string; }
 export interface QuantityValue { amount: number; unit: string; }
 
 export interface VersionMetadata {
@@ -87,7 +88,7 @@ export interface CalibrationMetadata { persistence:EdgePersistencePoint[]; later
 export interface UniversalObservationV1 {
   schemaVersion:typeof UNIVERSAL_OBSERVATION_SCHEMA_VERSION; observationId:string; mode:'PAPER_ONLY';
   observedAt:number; venue:string; marketType:MarketType; instrumentIds:string[]; conditionId?:string;
-  versions:VersionMetadata; provenance:DataProvenance; sampling:SamplingMetadata; relationship:RelationshipMetadata;
+  versions:VersionMetadata; provenance:DataProvenance; valuation:ValuationMetadata; sampling:SamplingMetadata; relationship:RelationshipMetadata;
   deterministic:DeterministicEvidence; execution:ExecutionSimulation; jev?:JevEvidence;
   classification:{opportunityClass:OpportunityClass;finalPaperDecision:PaperDecision;reasons:string[]};
   calibration:CalibrationMetadata;
@@ -107,6 +108,9 @@ export function validateUniversalObservation(o:UniversalObservationV1):Universal
   if(!o.venue) reasons.push('MISSING_VENUE');
   if(o.instrumentIds.length===0) reasons.push('MISSING_INSTRUMENT_IDS');
   if(!validQuantity(o.deterministic.targetSize)) reasons.push('INVALID_TARGET_QUANTITY');
+  if(!o.valuation.nativeSettlementCurrency.trim()||!o.valuation.reportingCurrency.trim()) reasons.push('INVALID_VALUATION_CURRENCY');
+  if(o.valuation.conversion==='NONE'&&o.valuation.nativeSettlementCurrency!==o.valuation.reportingCurrency) reasons.push('CURRENCY_MISMATCH_REQUIRES_FX');
+  if(o.valuation.conversion==='FX'&&!o.valuation.fxEvidenceReference) reasons.push('FX_REQUIRES_EVIDENCE');
 
   for(const v of [o.deterministic.expectedGrossProfit,o.deterministic.worstCaseGrossProfit,o.deterministic.expectedNetProfit,o.deterministic.worstCaseNetProfit,o.deterministic.fees,o.deterministic.slippage,o.deterministic.financingCosts,o.deterministic.otherCosts,o.execution.capitalRequired,o.execution.marginRequired]){
     if(!validMoney(v)) reasons.push('INVALID_MONEY_VALUE');
@@ -120,6 +124,7 @@ export function validateUniversalObservation(o:UniversalObservationV1):Universal
   // Only compare source and local time when explicitly declared to share the LOCAL clock domain.
   if(p.sourceTimestamp!==undefined&&p.sourceClock==='LOCAL'&&p.sourceTimestamp>p.receivedTimestamp) reasons.push('SOURCE_TIMESTAMP_AFTER_RECEIPT');
 
+  if(o.deterministic.status==='PASS'&&o.relationship.verification.status!=='VERIFIED') reasons.push('DETERMINISTIC_PASS_REQUIRES_VERIFIED_RELATIONSHIP');
   if(o.deterministic.status==='REJECT'&&o.classification.finalPaperDecision==='ACCEPT') reasons.push('DETERMINISTIC_REJECT_CANNOT_ACCEPT');
   if(o.classification.finalPaperDecision==='ACCEPT'){
     if(p.quality!=='VALID') reasons.push('ACCEPT_REQUIRES_VALID_DATA');
