@@ -105,7 +105,9 @@ function baseInput() {
       sourceTimestamp: 1_700_000_000_000,
       receivedTimestamp: 1_700_000_000_010,
       observationTimestamp: 1_700_000_000_020,
-      dataDepth: 'FULL_DEPTH' as const,
+      sourceClock: 'LOCAL' as const,
+      depthCapability: 'FULL_DEPTH' as const,
+      depthCapabilityBasis: 'SOURCE_RESPONSE' as const,
       quality: 'VALID' as const,
       qualityReasons: [],
     },
@@ -147,6 +149,8 @@ describe('toUniversalPolymarketObservation', () => {
     expect(result.jev?.status).toBe('ACCEPT');
     expect(result.classification.finalPaperDecision).toBe('REVIEW');
     expect(result.classification.reasons).toContain('ACCESSIBILITY_NOT_VERIFIED');
+    expect(result.classification.reasons).toContain('RELATIONSHIP_NOT_VERIFIED');
+    expect(result.relationship.verification.status).toBe('UNVERIFIED');
     expect(result.execution.accessibilityStatus).toBe('UNKNOWN');
     expect(validateUniversalObservation(result)).toEqual({ valid: true, reasons: [] });
   });
@@ -170,7 +174,9 @@ describe('toUniversalPolymarketObservation', () => {
     });
 
     expect(result.provenance.dataSource).toBe('polymarket-clob');
-    expect(result.provenance.dataDepth).toBe('FULL_DEPTH');
+    expect(result.provenance.depthCapability).toBe('FULL_DEPTH');
+    expect(result.deterministic.targetSize).toEqual({ amount: 10, unit: 'PAIRED_SHARES' });
+    expect(result.deterministic.expectedNetProfit).toEqual({ amount: 0.2, currency: 'USD' });
     expect(result.versions.samplingVersion).toBe('sampling-v1');
     expect(result.versions.promptVersion).toBe('jev-paper-judge-v1');
   });
