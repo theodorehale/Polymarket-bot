@@ -20,7 +20,9 @@ async function main(){
   let cursor: string | undefined;
   let pagesScanned=0;
   let marketsReturned=0;
-  let selected: Awaited<ReturnType<MarketService['getClobMarkets']>>['markets'][number] | undefined;
+  type DiscoveredMarket=Awaited<ReturnType<MarketService['getClobMarkets']>>['markets'][number];
+  let selected: DiscoveredMarket | undefined;
+  const semanticSamples: Array<{conditionId:string;slug:string;question:string;endDateIso:string|undefined;active:boolean;closed:boolean;acceptingOrders:boolean;tokens:Array<{tokenId:string;outcome:string}>}> = [];
   const diagnostic={
     active:0,notClosed:0,acceptingOrders:0,twoTokens:0,nonEmptyTokenMetadata:0,allConditions:0,
     activeAndNotClosed:0,activeAndAcceptingOrders:0,notClosedAndAcceptingOrders:0,
@@ -44,6 +46,9 @@ async function main(){
       if(active&&notClosed&&accepting) diagnostic.activeNotClosedAndAcceptingOrders++;
       if(active&&notClosed&&accepting&&metadata) diagnostic.tradeStateAndTokenMetadata++;
       if(active&&notClosed&&accepting&&two&&metadata) diagnostic.allConditions++;
+      if(active&&m.closed===true&&accepting&&two&&metadata&&semanticSamples.length<3){
+        semanticSamples.push({conditionId:m.conditionId,slug:m.marketSlug,question:m.question,endDateIso:m.endDateIso,active:m.active,closed:m.closed,acceptingOrders:m.acceptingOrders,tokens:m.tokens.map(t=>({tokenId:t.tokenId,outcome:t.outcome}))});
+      }
       const stateKey=`active=${active}|closed=${m.closed===true}|accepting=${accepting}`;
       diagnostic.stateCombinations[stateKey]=(diagnostic.stateCombinations[stateKey]??0)+1;
     }
@@ -54,10 +59,10 @@ async function main(){
     cursor=next;
   } while(pagesScanned<MAX_DISCOVERY_PAGES);
   if(!selected){
-    process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,diagnostic}},null,2)+'\n');
+    process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,diagnostic,semanticSamples}},null,2)+'\n');
     throw new Error(`NO_ELIGIBLE_PUBLIC_MARKET_FOUND_AFTER_${pagesScanned}_PAGES_${marketsReturned}_MARKETS`);
   }
   const record=await probePublicMarket(service,selected.conditionId);
-  process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,diagnostic,selected:{conditionId:selected.conditionId,slug:selected.marketSlug,question:selected.question}},probe:record},null,2)+'\n');
+  process.stdout.write(JSON.stringify({discovery:{pagesScanned,marketsReturned,diagnostic,semanticSamples,selected:{conditionId:selected.conditionId,slug:selected.marketSlug,question:selected.question}},probe:record},null,2)+'\n');
 }
 main().catch(e=>{process.stderr.write('PROBE_FAILED '+sanitizeExternalError(e)+'\n');process.exitCode=1;});
