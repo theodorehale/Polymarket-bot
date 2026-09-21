@@ -71,6 +71,7 @@ async function main() {
         },
         conditionIdMatches: clobMarket.conditionId === gammaMarket.conditionId,
       });
+      if (verifiedConditionIds.length >= 5) break;
     } catch (error) {
       semanticSamples.push({
         gamma: {
@@ -113,8 +114,8 @@ async function main() {
     ) + '\n'
   );
 
-  if (semanticSamples.length === 0) {
-    throw new Error('NO_VALID_GAMMA_DISCOVERY_CANDIDATES');
+  if (verifiedConditionIds.length === 0) {
+    throw new Error('NO_VERIFIED_GAMMA_CLOB_CANDIDATES');
   }
   if (verifiedConditionIds.length < 5) {
     throw new Error('FEWER_THAN_5_VERIFIED_CURRENT_MARKETS');
