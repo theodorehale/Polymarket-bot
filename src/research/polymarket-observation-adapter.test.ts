@@ -116,6 +116,8 @@ function baseInput() {
       discoveryReason: 'test fixture',
       eligibilityChecks: [{ name: 'binary', passed: true }],
     },
+    relationshipVerification: { status: 'VERIFIED' as const, evidenceSource: 'fixture-contract', reasons: [] },
+    nativeSettlementCurrency: 'USD',
     versions: {
       samplingVersion: 'sampling-v1',
       relationshipVersion: 'complement-v1',
@@ -149,10 +151,20 @@ describe('toUniversalPolymarketObservation', () => {
     expect(result.jev?.status).toBe('ACCEPT');
     expect(result.classification.finalPaperDecision).toBe('REVIEW');
     expect(result.classification.reasons).toContain('ACCESSIBILITY_NOT_VERIFIED');
-    expect(result.classification.reasons).toContain('RELATIONSHIP_NOT_VERIFIED');
-    expect(result.relationship.verification.status).toBe('UNVERIFIED');
+    expect(result.relationship.verification.status).toBe('VERIFIED');
     expect(result.execution.accessibilityStatus).toBe('UNKNOWN');
     expect(validateUniversalObservation(result)).toEqual({ valid: true, reasons: [] });
+  });
+
+  it('blocks deterministic PASS when relationship is unverified', () => {
+    const result = toUniversalPolymarketObservation({
+      ...baseInput(),
+      relationshipVerification: { status: 'UNVERIFIED' as const, reasons: ['not verified'] },
+      observation: observation(true),
+    });
+    expect(result.deterministic.status).toBe('REJECT');
+    expect(result.classification.finalPaperDecision).toBe('REVIEW');
+    expect(result.classification.reasons).toContain('RELATIONSHIP_NOT_VERIFIED');
   });
 
   it('keeps a deterministic PASS under review when Jev was not evaluated', () => {
@@ -179,5 +191,6 @@ describe('toUniversalPolymarketObservation', () => {
     expect(result.deterministic.expectedNetProfit).toEqual({ amount: 0.2, currency: 'USD' });
     expect(result.versions.samplingVersion).toBe('sampling-v1');
     expect(result.versions.promptVersion).toBe('jev-paper-judge-v1');
+    expect(result.valuation).toEqual({ nativeSettlementCurrency: 'USD', reportingCurrency: 'USD', conversion: 'NONE' });
   });
 });
