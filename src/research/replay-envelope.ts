@@ -22,13 +22,15 @@ export interface ReplayEnvelopeV1 {
 }
 export interface ReplayEnvelopeValidation {valid:boolean;reasons:string[];}
 
-function canonicalize(v:unknown):string{
+function canonicalize(v:unknown,ancestors=new Set<object>()):string{
   if(v===null||typeof v==='string'||typeof v==='boolean') return JSON.stringify(v);
   if(typeof v==='number'){if(!Number.isFinite(v)) throw new Error('NON_FINITE_CANONICAL_NUMBER');return JSON.stringify(v);}
-  if(Array.isArray(v)) return '['+v.map(canonicalize).join(',')+']';
+  if(Array.isArray(v)){if(ancestors.has(v)) throw new Error('CYCLIC_CANONICAL_VALUE');const next=new Set(ancestors);next.add(v);return '['+v.map(x=>canonicalize(x,next)).join(',')+']';}
   if(typeof v==='object'){
+    if(ancestors.has(v as object)) throw new Error('CYCLIC_CANONICAL_VALUE');
+    const next=new Set(ancestors);next.add(v as object);
     const obj=v as Record<string,unknown>;const keys=Object.keys(obj).filter(k=>obj[k]!==undefined).sort();
-    return '{'+keys.map(k=>JSON.stringify(k)+':'+canonicalize(obj[k])).join(',')+'}';
+    return '{'+keys.map(k=>JSON.stringify(k)+':'+canonicalize(obj[k],next)).join(',')+'}';
   }
   throw new Error('UNSUPPORTED_CANONICAL_VALUE');
 }
