@@ -37,18 +37,27 @@ async function main() {
   );
 
   const semanticSamples = [];
-  const verifiedConditionIds: string[] = [];
+  // Eligibility here means only that CLOB can be safely probed. It is NOT semantic verification.
+  const probeEligibleConditionIds: string[] = [];
   for (const gammaMarket of candidates) {
     try {
       const clobMarket = await clob.getClobMarket(gammaMarket.conditionId);
       if (
-        verifiedConditionIds.length < 5 &&
+        probeEligibleConditionIds.length < 5 &&
         clobMarket.conditionId === gammaMarket.conditionId &&
         clobMarket.active === true &&
         clobMarket.closed === false &&
         clobMarket.acceptingOrders === true &&
         clobMarket.tokens.length === 2
-      ) verifiedConditionIds.push(gammaMarket.conditionId);
+      ) probeEligibleConditionIds.push(gammaMarket.conditionId);
+      const semanticIssues: string[] = [];
+      if (clobMarket.conditionId !== gammaMarket.conditionId) semanticIssues.push('CONDITION_ID_MISMATCH');
+      if (clobMarket.marketSlug !== gammaMarket.slug) semanticIssues.push('SLUG_MISMATCH');
+      if (clobMarket.question !== gammaMarket.question) semanticIssues.push('QUESTION_MISMATCH');
+      const clobEndMs = Date.parse(clobMarket.endDateIso);
+      const gammaEndMs = gammaMarket.endDate.getTime();
+      if (!Number.isFinite(clobEndMs) || clobEndMs !== gammaEndMs) semanticIssues.push('END_DATE_MISMATCH');
+
       semanticSamples.push({
         gamma: {
           conditionId: gammaMarket.conditionId,
@@ -70,8 +79,9 @@ async function main() {
           tokens: clobMarket.tokens.map((t) => ({ tokenId: t.tokenId, outcome: t.outcome })),
         },
         conditionIdMatches: clobMarket.conditionId === gammaMarket.conditionId,
+        semanticIssues,
       });
-      if (verifiedConditionIds.length >= 5) break;
+      if (probeEligibleConditionIds.length >= 5) break;
     } catch (error) {
       semanticSamples.push({
         gamma: {
@@ -86,11 +96,11 @@ async function main() {
         clobError: sanitizeExternalError(error),
       });
     }
-    if (verifiedConditionIds.length >= 5) break;
+    if (probeEligibleConditionIds.length >= 5) break;
   }
 
   const orderbookProbes = [];
-  for (const conditionId of verifiedConditionIds) {
+  for (const conditionId of probeEligibleConditionIds) {
     try {
       orderbookProbes.push(await probePublicMarket(clob, conditionId));
     } catch (error) {
@@ -106,7 +116,7 @@ async function main() {
         gammaReturned: gammaMarkets.length,
         gammaCandidates: candidates.length,
         semanticSamples,
-        verifiedMarkets: verifiedConditionIds.length,
+        probeEligibleMarkets: probeEligibleConditionIds.length,
         orderbookProbes,
       },
       null,
@@ -114,11 +124,11 @@ async function main() {
     ) + '\n'
   );
 
-  if (verifiedConditionIds.length === 0) {
-    throw new Error('NO_VERIFIED_GAMMA_CLOB_CANDIDATES');
+  if (probeEligibleConditionIds.length === 0) {
+    throw new Error('NO_PROBE_ELIGIBLE_GAMMA_CLOB_CANDIDATES');
   }
-  if (verifiedConditionIds.length < 5) {
-    throw new Error('FEWER_THAN_5_VERIFIED_CURRENT_MARKETS');
+  if (probeEligibleConditionIds.length < 5) {
+    throw new Error('FEWER_THAN_5_PROBE_ELIGIBLE_CURRENT_MARKETS');
   }
 }
 
