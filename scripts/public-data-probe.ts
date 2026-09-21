@@ -37,18 +37,18 @@ async function main() {
   );
 
   const semanticSamples = [];
-  let firstVerifiedConditionId: string | undefined;
-  for (const gammaMarket of candidates.slice(0, 3)) {
+  const verifiedConditionIds: string[] = [];
+  for (const gammaMarket of candidates) {
     try {
       const clobMarket = await clob.getClobMarket(gammaMarket.conditionId);
       if (
-        !firstVerifiedConditionId &&
+        verifiedConditionIds.length < 5 &&
         clobMarket.conditionId === gammaMarket.conditionId &&
         clobMarket.active === true &&
         clobMarket.closed === false &&
         clobMarket.acceptingOrders === true &&
         clobMarket.tokens.length === 2
-      ) firstVerifiedConditionId = gammaMarket.conditionId;
+      ) verifiedConditionIds.push(gammaMarket.conditionId);
       semanticSamples.push({
         gamma: {
           conditionId: gammaMarket.conditionId,
@@ -85,11 +85,17 @@ async function main() {
         clobError: sanitizeExternalError(error),
       });
     }
+    if (verifiedConditionIds.length >= 5) break;
   }
 
-  const orderbookProbe = firstVerifiedConditionId
-    ? await probePublicMarket(clob, firstVerifiedConditionId)
-    : undefined;
+  const orderbookProbes = [];
+  for (const conditionId of verifiedConditionIds) {
+    try {
+      orderbookProbes.push(await probePublicMarket(clob, conditionId));
+    } catch (error) {
+      orderbookProbes.push({ conditionId, probeError: sanitizeExternalError(error) });
+    }
+  }
 
   process.stdout.write(
     JSON.stringify(
@@ -99,7 +105,8 @@ async function main() {
         gammaReturned: gammaMarkets.length,
         gammaCandidates: candidates.length,
         semanticSamples,
-        orderbookProbe,
+        verifiedMarkets: verifiedConditionIds.length,
+        orderbookProbes,
       },
       null,
       2
@@ -108,6 +115,9 @@ async function main() {
 
   if (semanticSamples.length === 0) {
     throw new Error('NO_VALID_GAMMA_DISCOVERY_CANDIDATES');
+  }
+  if (verifiedConditionIds.length < 5) {
+    throw new Error('FEWER_THAN_5_VERIFIED_CURRENT_MARKETS');
   }
 }
 
