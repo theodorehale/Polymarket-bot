@@ -115,7 +115,7 @@ export function toUniversalPolymarketObservation(
       worstCaseNetProfit: { amount: quote.worstCaseNetProfitUsd, currency: 'USD' },
       expectedNetEdgeBps: quote.expectedNetEdgeBps,
       worstCaseNetEdgeBps: quote.worstCaseNetEdgeBps,
-      fees: quote.expectedFeesUsd === undefined ? undefined : { amount: quote.expectedFeesUsd, currency: 'USD' },
+      fees: quote.expectedFeesUsd == null ? undefined : { amount: quote.expectedFeesUsd, currency: 'USD' },
       otherCosts: { amount: quote.expectedGasUsd + quote.expectedOtherCostsUsd, currency: 'USD' },
       freshness: {
         maxObservedAgeMs: Math.max(quote.books.yesAgeMs, quote.books.noAgeMs),
