@@ -21,7 +21,7 @@ describe('Jev paper records', () => {
           worstCaseNetEdgeBps: 200,
         },
       },
-    } as PaperObservation;
+    } as unknown as PaperObservation;
 
     const record = makeJevPaperRecord(observation, {
       mode: 'PAPER_ONLY',
