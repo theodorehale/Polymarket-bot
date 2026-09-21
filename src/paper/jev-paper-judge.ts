@@ -9,6 +9,7 @@ import { noul, TypeSafeClient } from '@typesafe-ai/sdk';
 import type { PaperObservation } from './public-market-observer.js';
 
 export const JEV_PROMPT_VERSION = 'jev-paper-judge-v1' as const;
+export const DEFAULT_JEV_ACCEPT_THRESHOLD = 0.8 as const;
 
 export type JevPaperStatus = 'ACCEPT' | 'REVIEW' | 'REJECT' | 'JEV_UNAVAILABLE';
 
@@ -16,6 +17,9 @@ export interface JevPaperJudgment {
   mode: 'PAPER_ONLY';
   promptVersion: typeof JEV_PROMPT_VERSION;
   judgedAt: number;
+  completedAt: number;
+  latencyMs: number;
+  acceptThreshold: number;
   deterministicStatus: PaperObservation['status'];
   probability?: number;
   status: JevPaperStatus;
@@ -51,19 +55,31 @@ export async function judgePaperObservationWithJev(
   options: JevPaperJudgeOptions = {}
 ): Promise<JevPaperJudgment> {
   const judgedAt = Date.now();
-
-  // Hard invariant: probabilistic judgment cannot override deterministic FAIL.
-  if (observation.status !== 'PAPER_EXECUTABLE') {
+  const threshold = options.acceptThreshold ?? DEFAULT_JEV_ACCEPT_THRESHOLD;
+  const finish = (
+    partial: Omit<JevPaperJudgment, 'mode' | 'promptVersion' | 'judgedAt' | 'completedAt' | 'latencyMs' | 'acceptThreshold' | 'deterministicStatus'>
+  ): JevPaperJudgment => {
+    const completedAt = Date.now();
     return {
       mode: 'PAPER_ONLY',
       promptVersion: JEV_PROMPT_VERSION,
       judgedAt,
+      completedAt,
+      latencyMs: Math.max(0, completedAt - judgedAt),
+      acceptThreshold: threshold,
       deterministicStatus: observation.status,
-      status: 'REJECT',
+      ...partial,
     };
+  };
+
+  // Hard invariant: probabilistic judgment cannot override deterministic FAIL.
+  if (observation.status !== 'PAPER_EXECUTABLE') {
+    return finish({ status: 'REJECT' });
   }
 
-  const threshold = options.acceptThreshold ?? 0.8;
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    return finish({ status: 'JEV_UNAVAILABLE', error: 'INVALID_JEV_ACCEPT_THRESHOLD' });
+  }
 
   try {
     const client = options.client ?? new TypeSafeClient();
@@ -78,32 +94,17 @@ export async function judgePaperObservationWithJev(
 
     const probability = response.answers.acceptable.noul;
     if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
-      return {
-        mode: 'PAPER_ONLY',
-        promptVersion: JEV_PROMPT_VERSION,
-        judgedAt,
-        deterministicStatus: observation.status,
-        status: 'JEV_UNAVAILABLE',
-        error: 'INVALID_JEV_PROBABILITY',
-      };
+      return finish({ status: 'JEV_UNAVAILABLE', error: 'INVALID_JEV_PROBABILITY' });
     }
 
-    return {
-      mode: 'PAPER_ONLY',
-      promptVersion: JEV_PROMPT_VERSION,
-      judgedAt,
-      deterministicStatus: observation.status,
+    return finish({
       probability,
       status: probability >= threshold ? 'ACCEPT' : 'REVIEW',
-    };
+    });
   } catch (error) {
-    return {
-      mode: 'PAPER_ONLY',
-      promptVersion: JEV_PROMPT_VERSION,
-      judgedAt,
-      deterministicStatus: observation.status,
+    return finish({
       status: 'JEV_UNAVAILABLE',
       error: error instanceof Error ? error.message : 'UNKNOWN_JEV_ERROR',
-    };
+    });
   }
 }
