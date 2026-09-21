@@ -381,7 +381,10 @@ export class GammaApiClient {
           await response.json().catch(() => null)
         );
       const data: unknown = await response.json();
-      validateExternalInputShape(data);
+      const shapeReasons = validateExternalInputShape(data);
+      if (shapeReasons.length > 0) {
+        throw new Error('EXTERNAL_GAMMA_INPUT_REJECTED');
+      }
       if (!Array.isArray(data)) {
         throw new Error('INVALID_GAMMA_MARKETS_RESPONSE_SHAPE');
       }
