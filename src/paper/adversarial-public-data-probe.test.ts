@@ -23,6 +23,18 @@ describe('adversarial public data probe',()=>{
   const r=await probePublicMarket(s,'c',{now:()=>5000,maxBookAgeMs:10000,maxBookSkewMs:1000});
   expect(r.issues).toEqual(expect.arrayContaining(['MALFORMED_LEVEL','BOOK_SKEW']));
  });
+ it('preserves requested token attribution when the first book fetch fails',async()=>{
+  const s:any={getClobMarket:async()=>market(),getTokenOrderbook:async(id:string)=>{if(id==='y') throw new Error('first failed');return book('n',1000);}};
+  const r=await probePublicMarket(s,'c',{now:()=>1500,maxBookAgeMs:1000});
+  expect(r.issues).toContain('BOOK_FETCH_FAILED');
+  expect(r.books).toEqual([{requestedTokenId:'n',returnedTokenId:'n',timestamp:1000,bids:1,asks:1}]);
+ });
+ it('fails closed when a returned orderbook omits its token id',async()=>{
+  const s:any={getClobMarket:async()=>market(),getTokenOrderbook:async(id:string)=>id==='y'?{...book(id,1000),tokenId:''}:book(id,1000)};
+  const r=await probePublicMarket(s,'c',{now:()=>1500,maxBookAgeMs:1000});
+  expect(r.issues).toContain('BOOK_TOKEN_MISMATCH');
+ });
+
  it('sanitizes fetch errors',async()=>{
   const s:any={getClobMarket:async()=>market(),getTokenOrderbook:async()=>{throw new Error('api_key=sk-abcdefghijklmnop')}};
   const r=await probePublicMarket(s,'c');expect(r.errors.join(' ')).not.toContain('abcdefghijklmnop');expect(r.issues).toContain('BOOK_FETCH_FAILED');
