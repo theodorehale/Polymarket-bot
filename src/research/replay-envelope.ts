@@ -4,6 +4,7 @@
  */
 import { createHash } from 'node:crypto';
 import { type UniversalObservationV1, validateUniversalObservation } from './universal-observation.js';
+import { containsSecretLikeMaterial } from './security-boundary.js';
 
 export const REPLAY_ENVELOPE_VERSION='replay-envelope-v1' as const;
 export const CANONICAL_JSON_VERSION='canonical-json-v1' as const;
@@ -20,12 +21,6 @@ export interface ReplayEnvelopeV1 {
 }
 export interface ReplayEnvelopeValidation {valid:boolean;reasons:string[];}
 
-const SECRET_KEY_PATTERN=/(private.?key|secret|password|mnemonic|seed.?phrase|api.?key|authorization|bearer|signer)/i;
-function containsSecretLikeKey(v:unknown,seen=new Set<object>()):boolean{
-  if(v===null||typeof v!=='object') return false;if(seen.has(v as object)) return false;seen.add(v as object);
-  if(Array.isArray(v)) return v.some(x=>containsSecretLikeKey(x,seen));
-  for(const [k,x] of Object.entries(v as Record<string,unknown>)){if(SECRET_KEY_PATTERN.test(k)) return true;if(containsSecretLikeKey(x,seen)) return true;}return false;
-}
 function canonicalize(v:unknown):string{
   if(v===null||typeof v==='string'||typeof v==='boolean') return JSON.stringify(v);
   if(typeof v==='number'){if(!Number.isFinite(v)) throw new Error('NON_FINITE_CANONICAL_NUMBER');return JSON.stringify(v);}
@@ -45,7 +40,7 @@ export function validateReplayEnvelope(e:ReplayEnvelopeV1):ReplayEnvelopeValidat
   if(!e.observationId||e.observationId!==e.normalized.observationId) reasons.push('OBSERVATION_ID_MISMATCH');
   if(!Number.isFinite(e.capturedAt)||e.capturedAt<=0) reasons.push('INVALID_CAPTURED_AT');
   if(e.engineInputSnapshot===undefined) reasons.push('ENGINE_INPUT_SNAPSHOT_REQUIRED');
-  if(containsSecretLikeKey(e.engineInputSnapshot)) reasons.push('SECRET_LIKE_FIELD_IN_ENGINE_INPUT');
+  if(containsSecretLikeMaterial(e.engineInputSnapshot)) reasons.push('SECRET_LIKE_FIELD_IN_ENGINE_INPUT');
   const ov=validateUniversalObservation(e.normalized);reasons.push(...ov.reasons.map(x=>'OBSERVATION_'+x));
   for(const x of e.rawEvidence){
     if(!x.source) reasons.push('RAW_EVIDENCE_SOURCE_REQUIRED');
@@ -57,7 +52,7 @@ export function validateReplayEnvelope(e:ReplayEnvelopeV1):ReplayEnvelopeValidat
     }
     if(x.kind==='EMBEDDED_JSON'){
       if(x.embeddedJson===undefined) reasons.push('EMBEDDED_JSON_REQUIRED');
-      if(containsSecretLikeKey(x.embeddedJson)) reasons.push('SECRET_LIKE_FIELD_IN_RAW_EVIDENCE');
+      if(containsSecretLikeMaterial(x.embeddedJson)) reasons.push('SECRET_LIKE_FIELD_IN_RAW_EVIDENCE');
       if(x.hashAlgorithm!==EVIDENCE_HASH_ALGORITHM) reasons.push('HASH_ALGORITHM_REQUIRED');
       if(x.canonicalization!==CANONICAL_JSON_VERSION) reasons.push('CANONICALIZATION_REQUIRED');
       if(x.embeddedJson!==undefined){
