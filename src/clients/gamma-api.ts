@@ -583,7 +583,7 @@ export class GammaApiClient {
         m.lastTradePrice !== undefined ? Number(m.lastTradePrice) : undefined,
       bestBid: m.bestBid !== undefined ? Number(m.bestBid) : undefined,
       bestAsk: m.bestAsk !== undefined ? Number(m.bestAsk) : undefined,
-      endDate: new Date(String(m.endDate || Date.now())),
+      endDate: m.endDate ? new Date(String(m.endDate)) : new Date(NaN),
       createdAt: m.createdAt ? new Date(String(m.createdAt)) : undefined,
       startDate: m.startDate ? new Date(String(m.startDate)) : undefined,
       acceptingOrdersTimestamp: m.acceptingOrdersTimestamp
