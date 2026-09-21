@@ -27,6 +27,9 @@ describe('Jev paper records', () => {
       mode: 'PAPER_ONLY',
       promptVersion: 'jev-paper-judge-v1',
       judgedAt: 1100,
+      completedAt: 1250,
+      latencyMs: 150,
+      acceptThreshold: 0.8,
       deterministicStatus: 'PAPER_EXECUTABLE',
       probability: 0.91,
       status: 'ACCEPT',
@@ -35,6 +38,8 @@ describe('Jev paper records', () => {
     const json = jevPaperRecordToJsonl(record);
     expect(record.schemaVersion).toBe('jev-paper-record-v1');
     expect(record.jev.probability).toBe(0.91);
+    expect(record.jev.acceptThreshold).toBe(0.8);
+    expect(record.jev.latencyMs).toBe(150);
     expect(json.toLowerCase()).not.toContain('privatekey');
     expect(json.toLowerCase()).not.toContain('wallet');
     expect(json.toLowerCase()).not.toContain('signer');
