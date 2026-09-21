@@ -138,7 +138,11 @@ export function validateUniversalObservation(o:UniversalObservationV1):Universal
     if(p.depthCapabilityBasis==='OBSERVED_ONLY'||p.depthCapabilityBasis==='UNKNOWN') reasons.push('UNVERIFIED_SOURCE_DEPTH_CAPABILITY');
   }
 
-  if(o.relationship.verification.status==='VERIFIED'&&!o.relationship.verification.evidenceSource) reasons.push('VERIFIED_RELATIONSHIP_REQUIRES_EVIDENCE_SOURCE');
+  if(o.relationship.verification.status==='VERIFIED'){
+    if(!o.relationship.verification.evidenceSource) reasons.push('VERIFIED_RELATIONSHIP_REQUIRES_EVIDENCE_SOURCE');
+    if(!o.relationship.verification.evidenceReference) reasons.push('VERIFIED_RELATIONSHIP_REQUIRES_EVIDENCE_REFERENCE');
+    if(!o.relationship.verification.verifiedAt||!finiteNonNegative(o.relationship.verification.verifiedAt)) reasons.push('VERIFIED_RELATIONSHIP_REQUIRES_VALID_TIME');
+  }
 
   if(o.jev){
     if(!Number.isFinite(o.jev.acceptThreshold)||o.jev.acceptThreshold<0||o.jev.acceptThreshold>1) reasons.push('INVALID_JEV_THRESHOLD');
