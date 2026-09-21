@@ -37,6 +37,7 @@
 import { RateLimiter, ApiType } from '../core/rate-limiter.js';
 import type { UnifiedCache } from '../core/unified-cache.js';
 import { PolymarketError } from '../core/errors.js';
+import { validateExternalInputShape } from '../research/security-boundary.js';
 
 /** Gamma API base URL */
 const GAMMA_API_BASE = 'https://gamma-api.polymarket.com';
@@ -379,9 +380,17 @@ export class GammaApiClient {
           response.status,
           await response.json().catch(() => null)
         );
-      const data = (await response.json()) as unknown[];
-      if (!Array.isArray(data)) return [];
-      return data.map((item) => this.normalizeMarket(item as Record<string, unknown>));
+      const data: unknown = await response.json();
+      validateExternalInputShape(data);
+      if (!Array.isArray(data)) {
+        throw new Error('INVALID_GAMMA_MARKETS_RESPONSE_SHAPE');
+      }
+      return data.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          throw new Error('INVALID_GAMMA_MARKET_SHAPE');
+        }
+        return this.normalizeMarket(item as Record<string, unknown>);
+      });
     });
   }
 
