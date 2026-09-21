@@ -69,6 +69,7 @@ export function toUniversalPolymarketObservation(
     reasons.push(
       jev.status === 'ACCEPT' ? 'ACCESSIBILITY_NOT_VERIFIED' : 'JEV_REVIEW'
     );
+    if (jev.status === 'ACCEPT') reasons.push('RELATIONSHIP_NOT_VERIFIED');
   }
 
   return {
@@ -95,27 +96,38 @@ export function toUniversalPolymarketObservation(
         'paired payout relationship is valid for this market',
       ],
       requiredInputs: ['yes-orderbook', 'no-orderbook', 'fee-model', 'cost-model'],
+      verification: {
+        // Token resolution alone does not prove contract/resolution semantics.
+        status: 'UNVERIFIED',
+        reasons: ['RELATIONSHIP_SEMANTICS_NOT_YET_VERIFIED'],
+      },
     },
     deterministic: {
       status: deterministicPass ? 'PASS' : 'REJECT',
       rejectionReasons: [...observation.rejectionReasons],
-      targetSize: quote.targetPairShares,
-      expectedGrossProfit: quote.expectedGrossProfitUsd,
-      worstCaseGrossProfit: quote.worstCaseGrossProfitUsd,
-      expectedNetProfit: quote.expectedNetProfitUsd,
-      worstCaseNetProfit: quote.worstCaseNetProfitUsd,
+      targetSize: { amount: quote.targetPairShares, unit: 'PAIRED_SHARES' },
+      expectedGrossProfit: { amount: quote.expectedGrossProfitUsd, currency: 'USD' },
+      worstCaseGrossProfit: { amount: quote.worstCaseGrossProfitUsd, currency: 'USD' },
+      expectedNetProfit: { amount: quote.expectedNetProfitUsd, currency: 'USD' },
+      worstCaseNetProfit: { amount: quote.worstCaseNetProfitUsd, currency: 'USD' },
       expectedNetEdgeBps: quote.expectedNetEdgeBps,
       worstCaseNetEdgeBps: quote.worstCaseNetEdgeBps,
-      fees: quote.expectedFeesUsd ?? undefined,
-      otherCosts: quote.expectedGasUsd + quote.expectedOtherCostsUsd,
+      fees: quote.expectedFeesUsd === undefined ? undefined : { amount: quote.expectedFeesUsd, currency: 'USD' },
+      otherCosts: { amount: quote.expectedGasUsd + quote.expectedOtherCostsUsd, currency: 'USD' },
       freshness: {
         maxObservedAgeMs: Math.max(quote.books.yesAgeMs, quote.books.noAgeMs),
         skewMs: quote.books.skewMs,
       },
       depthSummary: {
-        known: true,
+        observedLevelsKnown: true,
+        // Do not claim source-wide sufficiency unless provenance independently
+        // establishes a documented/response-level FULL_DEPTH capability.
         sufficientForTarget:
-          quote.yesLeg.fullyFillable && quote.noLeg.fullyFillable,
+          input.provenance.depthCapability === 'FULL_DEPTH' &&
+          (input.provenance.depthCapabilityBasis === 'SOURCE_DOCUMENTED' ||
+            input.provenance.depthCapabilityBasis === 'SOURCE_RESPONSE')
+            ? quote.yesLeg.fullyFillable && quote.noLeg.fullyFillable
+            : undefined,
       },
     },
     execution: {
