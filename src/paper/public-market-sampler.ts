@@ -10,6 +10,7 @@ import type { MarketService } from '../services/market-service.js';
 import type { PaperObservationConfig, PaperObservation } from './public-market-observer.js';
 import { observePublicMarket } from './public-market-observer.js';
 import { observationToJsonl, summarizePaperObservations, type PaperObservationStats } from './observation-stats.js';
+import { sanitizeExternalError } from '../research/security-boundary.js';
 
 export interface BatchPaperSample {
   mode: 'PAPER_ONLY';
@@ -40,7 +41,7 @@ export async function samplePublicMarkets(
     } catch (error) {
       errors.push({
         conditionId,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeExternalError(error),
       });
     }
   }
