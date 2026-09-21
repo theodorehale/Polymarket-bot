@@ -116,7 +116,7 @@ function baseInput() {
       discoveryReason: 'test fixture',
       eligibilityChecks: [{ name: 'binary', passed: true }],
     },
-    relationshipVerification: { status: 'VERIFIED' as const, evidenceSource: 'fixture-contract', reasons: [] },
+    relationshipVerification: { status: 'VERIFIED' as const, evidenceSource: 'fixture-contract', evidenceReference: 'fixture://contract/yes-no', verifiedAt: 1_700_000_000_005, reasons: [] },
     nativeSettlementCurrency: 'USD',
     versions: {
       samplingVersion: 'sampling-v1',
