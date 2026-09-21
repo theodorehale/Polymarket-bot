@@ -4,7 +4,8 @@
  */
 import { MarketService } from '../src/services/market-service.js';
 import { RateLimiter } from '../src/core/rate-limiter.js';
-import { UnifiedCache } from '../src/core/unified-cache.js';
+import { Cache } from '../src/core/cache.js';
+import { LegacyCacheWrapper } from '../src/core/unified-cache.js';
 import { probePublicMarket } from '../src/paper/adversarial-public-data-probe.js';
 import { sanitizeExternalError } from '../src/research/security-boundary.js';
 
@@ -13,7 +14,7 @@ async function main(){
     throw new Error('PROBE_REFUSES_PRIVATE_KEY_ENVIRONMENT');
   }
   const rateLimiter=new RateLimiter();
-  const cache=new UnifiedCache();
+  const cache=new LegacyCacheWrapper(new Cache());
   const service=new MarketService(undefined,undefined,rateLimiter,cache,undefined);
   const page=await service.getClobMarkets();
   const candidates=page.markets.filter(m=>m.active&&!m.closed&&m.acceptingOrders&&m.tokens.length===2&&m.tokens.every(t=>t.tokenId&&t.outcome.trim()));
