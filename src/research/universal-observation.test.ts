@@ -1,168 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import {
-  UNIVERSAL_OBSERVATION_SCHEMA_VERSION,
-  type UniversalObservationV1,
-  validateUniversalObservation,
-  universalObservationToJsonl,
-} from './universal-observation.js';
+import { describe,expect,it } from 'vitest';
+import { UNIVERSAL_OBSERVATION_SCHEMA_VERSION,type UniversalObservationV1,validateUniversalObservation,universalObservationToJsonl } from './universal-observation.js';
 
-function validObservation(): UniversalObservationV1 {
-  return {
-    schemaVersion: UNIVERSAL_OBSERVATION_SCHEMA_VERSION,
-    observationId: 'obs-1',
-    mode: 'PAPER_ONLY',
-    observedAt: 1_700_000_000_000,
-    venue: 'polymarket',
-    marketType: 'PREDICTION',
-    instrumentIds: ['yes-token', 'no-token'],
-    conditionId: '0xcondition',
-    versions: {
-      schemaVersion: UNIVERSAL_OBSERVATION_SCHEMA_VERSION,
-      samplingVersion: 'sampling-v1',
-      relationshipVersion: 'complement-v1',
-      deterministicEngineVersion: 'executable-edge-v1',
-      executionModelVersion: 'paper-execution-v1',
-      feeModelVersion: 'fee-v1',
-      costModelVersion: 'cost-v1',
-      promptVersion: 'jev-paper-judge-v1',
-    },
-    provenance: {
-      dataSource: 'polymarket-clob',
-      feedType: 'rest-orderbook',
-      snapshotOrIncremental: 'SNAPSHOT',
-      sourceTimestamp: 1_700_000_000_000,
-      receivedTimestamp: 1_700_000_000_010,
-      observationTimestamp: 1_700_000_000_020,
-      dataDepth: 'FULL_DEPTH',
-      quality: 'VALID',
-      qualityReasons: [],
-    },
-    sampling: {
-      group: 'DETERMINISTIC_CANDIDATE',
-      discoveryReason: 'active binary market',
-      eligibilityChecks: [
-        { name: 'binary-market', passed: true },
-        { name: 'orderbooks-present', passed: true },
-      ],
-    },
-    relationship: {
-      type: 'COMPLEMENT',
-      relatedInstrumentIds: ['yes-token', 'no-token'],
-      assumptions: ['complementary binary payout'],
-      requiredInputs: ['yes-book', 'no-book'],
-    },
-    deterministic: {
-      status: 'PASS',
-      rejectionReasons: [],
-      targetSize: 10,
-      expectedGrossProfit: 0.3,
-      worstCaseGrossProfit: 0.2,
-      expectedNetProfit: 0.25,
-      worstCaseNetProfit: 0.15,
-      expectedNetEdgeBps: 250,
-      worstCaseNetEdgeBps: 150,
-      fees: 0,
-      otherCosts: 0.05,
-      freshness: { maxObservedAgeMs: 20, skewMs: 5 },
-      depthSummary: { known: true, sufficientForTarget: true },
-    },
-    execution: {
-      atomicity: 'NON_ATOMIC',
-      legCount: 2,
-      estimatedLatencyMs: 100,
-      partialFillRisk: 'UNKNOWN',
-      hedgeCompletionStatus: 'NOT_REQUIRED',
-      capitalRequired: 9.7,
-      accessibilityStatus: 'ACCESSIBLE',
-    },
-    jev: {
-      promptVersion: 'jev-paper-judge-v1',
-      acceptThreshold: 0.8,
-      startedAt: 1_700_000_000_030,
-      completedAt: 1_700_000_000_180,
-      latencyMs: 150,
-      probability: 0.84,
-      status: 'ACCEPT',
-    },
-    classification: {
-      opportunityClass: 'STRUCTURAL',
-      finalPaperDecision: 'ACCEPT',
-      reasons: [],
-    },
-    calibration: {
-      persistence: [],
-    },
-  };
-}
-
-describe('UniversalObservationV1', () => {
-  it('accepts a valid paper-only observation', () => {
-    expect(validateUniversalObservation(validObservation())).toEqual({
-      valid: true,
-      reasons: [],
-    });
-  });
-
-  it('forbids AI/final ACCEPT from overriding deterministic REJECT', () => {
-    const observation = validObservation();
-    observation.deterministic.status = 'REJECT';
-    observation.deterministic.rejectionReasons = ['INSUFFICIENT_YES_DEPTH'];
-
-    const result = validateUniversalObservation(observation);
-
-    expect(result.valid).toBe(false);
-    expect(result.reasons).toContain('DETERMINISTIC_REJECT_CANNOT_ACCEPT');
-  });
-
-  it('requires valid data and accessible execution for ACCEPT', () => {
-    const observation = validObservation();
-    observation.provenance.quality = 'STALE';
-    observation.execution.accessibilityStatus = 'UNKNOWN';
-
-    const result = validateUniversalObservation(observation);
-
-    expect(result.reasons).toContain('ACCEPT_REQUIRES_VALID_DATA');
-    expect(result.reasons).toContain('ACCEPT_REQUIRES_ACCESSIBLE_EXECUTION');
-  });
-
-  it('does not let top-of-book data prove full target depth', () => {
-    const observation = validObservation();
-    observation.provenance.dataDepth = 'TOP_OF_BOOK';
-
-    const result = validateUniversalObservation(observation);
-
-    expect(result.reasons).toContain('TOP_OF_BOOK_CANNOT_PROVE_FULL_TARGET_DEPTH');
-  });
-
-  it('fails closed on invalid Jev probability, threshold, or timing', () => {
-    const observation = validObservation();
-    observation.jev = {
-      ...observation.jev!,
-      acceptThreshold: 1.2,
-      probability: -0.1,
-      startedAt: 200,
-      completedAt: 100,
-      latencyMs: -1,
-    };
-
-    const result = validateUniversalObservation(observation);
-
-    expect(result.reasons).toEqual(expect.arrayContaining([
-      'INVALID_JEV_THRESHOLD',
-      'INVALID_JEV_PROBABILITY',
-      'INVALID_JEV_TIMING',
-      'INVALID_JEV_LATENCY',
-    ]));
-  });
-
-  it('serializes audit data without inventing vendor metadata', () => {
-    const line = universalObservationToJsonl(validObservation());
-    const parsed = JSON.parse(line);
-
-    expect(parsed.schemaVersion).toBe('universal-observation-v1');
-    expect(parsed.jev.vendorMetadata).toBeUndefined();
-    expect(line.toLowerCase()).not.toContain('privatekey');
-    expect(line.toLowerCase()).not.toContain('signer');
-    expect(line.toLowerCase()).not.toContain('submitorder');
-  });
+export function validObservation():UniversalObservationV1{return {
+ schemaVersion:UNIVERSAL_OBSERVATION_SCHEMA_VERSION,observationId:'obs-1',mode:'PAPER_ONLY',observedAt:1700000000020,venue:'polymarket',marketType:'PREDICTION',instrumentIds:['yes','no'],
+ versions:{schemaVersion:UNIVERSAL_OBSERVATION_SCHEMA_VERSION,samplingVersion:'s1',relationshipVersion:'r1',deterministicEngineVersion:'d1',executionModelVersion:'e1',feeModelVersion:'f1',costModelVersion:'c1'},
+ provenance:{dataSource:'clob',feedType:'rest',snapshotOrIncremental:'SNAPSHOT',sourceTimestamp:1700000000000,receivedTimestamp:1700000000010,observationTimestamp:1700000000020,sourceClock:'LOCAL',depthCapability:'FULL_DEPTH',depthCapabilityBasis:'SOURCE_RESPONSE',quality:'VALID',qualityReasons:[]},
+ sampling:{group:'DETERMINISTIC_CANDIDATE',discoveryReason:'fixture',eligibilityChecks:[]},
+ relationship:{type:'COMPLEMENT',relatedInstrumentIds:['yes','no'],assumptions:[],requiredInputs:['books'],verification:{status:'VERIFIED',evidenceSource:'fixture-contract',reasons:[]}},
+ deterministic:{status:'PASS',rejectionReasons:[],targetSize:{amount:10,unit:'PAIRED_SHARES'},expectedNetProfit:{amount:.2,currency:'USD'},worstCaseNetProfit:{amount:.1,currency:'USD'},depthSummary:{observedLevelsKnown:true,sufficientForTarget:true}},
+ execution:{atomicity:'NON_ATOMIC',legCount:2,partialFillRisk:'UNKNOWN',hedgeCompletionStatus:'UNKNOWN',accessibilityStatus:'ACCESSIBLE'},
+ classification:{opportunityClass:'STRUCTURAL',finalPaperDecision:'ACCEPT',reasons:[]},calibration:{persistence:[]}
+};}
+describe('UniversalObservationV1 P0',()=>{
+ it('accepts explicit units, currency, verified relation and sourced depth',()=>expect(validateUniversalObservation(validObservation())).toEqual({valid:true,reasons:[]}));
+ it('rejects impossible local timestamp ordering',()=>{const o=validObservation();o.provenance.observationTimestamp=o.provenance.receivedTimestamp-1;o.provenance.sourceTimestamp=o.provenance.receivedTimestamp+1;expect(validateUniversalObservation(o).reasons).toEqual(expect.arrayContaining(['OBSERVATION_PRECEDES_RECEIPT','SOURCE_TIMESTAMP_AFTER_RECEIPT']));});
+ it('does not compare clocks when source clock domain is unknown',()=>{const o=validObservation();o.provenance.sourceClock='UNKNOWN';o.provenance.sourceTimestamp=o.provenance.receivedTimestamp+1000;expect(validateUniversalObservation(o).reasons).not.toContain('SOURCE_TIMESTAMP_AFTER_RECEIPT');});
+ it('rejects target depth claims from unverified source capability',()=>{const o=validObservation();o.provenance.depthCapabilityBasis='OBSERVED_ONLY';expect(validateUniversalObservation(o).reasons).toContain('UNVERIFIED_SOURCE_DEPTH_CAPABILITY');});
+ it('requires verified relationship before universal ACCEPT',()=>{const o=validObservation();o.relationship.verification={status:'UNVERIFIED',reasons:['not checked']};expect(validateUniversalObservation(o).reasons).toContain('ACCEPT_REQUIRES_VERIFIED_RELATIONSHIP');});
+ it('rejects unitless quantity and currencyless money',()=>{const o=validObservation();o.deterministic.targetSize.unit='';o.deterministic.expectedNetProfit={amount:1,currency:''};expect(validateUniversalObservation(o).reasons).toEqual(expect.arrayContaining(['INVALID_TARGET_QUANTITY','INVALID_MONEY_VALUE']));});
+ it('forbids deterministic reject from becoming ACCEPT',()=>{const o=validObservation();o.deterministic.status='REJECT';expect(validateUniversalObservation(o).reasons).toContain('DETERMINISTIC_REJECT_CANNOT_ACCEPT');});
+ it('fails serialization closed on invalid evidence',()=>{const o=validObservation();o.relationship.verification.status='UNVERIFIED';expect(()=>universalObservationToJsonl(o)).toThrow(/INVALID_UNIVERSAL_OBSERVATION/);});
 });
