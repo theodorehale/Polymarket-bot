@@ -8,6 +8,7 @@ import { RateLimiter } from '../src/core/rate-limiter.js';
 import { Cache } from '../src/core/cache.js';
 import { LegacyCacheWrapper } from '../src/core/unified-cache.js';
 import { sanitizeExternalError } from '../src/research/security-boundary.js';
+import { probePublicMarket } from '../src/paper/adversarial-public-data-probe.js';
 
 async function main() {
   if (process.env.POLYMARKET_PRIVATE_KEY || process.env.PRIVATE_KEY) {
@@ -36,9 +37,18 @@ async function main() {
   );
 
   const semanticSamples = [];
+  let firstVerifiedConditionId: string | undefined;
   for (const gammaMarket of candidates.slice(0, 3)) {
     try {
       const clobMarket = await clob.getClobMarket(gammaMarket.conditionId);
+      if (
+        !firstVerifiedConditionId &&
+        clobMarket.conditionId === gammaMarket.conditionId &&
+        clobMarket.active === true &&
+        clobMarket.closed === false &&
+        clobMarket.acceptingOrders === true &&
+        clobMarket.tokens.length === 2
+      ) firstVerifiedConditionId = gammaMarket.conditionId;
       semanticSamples.push({
         gamma: {
           conditionId: gammaMarket.conditionId,
@@ -77,6 +87,10 @@ async function main() {
     }
   }
 
+  const orderbookProbe = firstVerifiedConditionId
+    ? await probePublicMarket(clob, firstVerifiedConditionId)
+    : undefined;
+
   process.stdout.write(
     JSON.stringify(
       {
@@ -85,6 +99,7 @@ async function main() {
         gammaReturned: gammaMarkets.length,
         gammaCandidates: candidates.length,
         semanticSamples,
+        orderbookProbe,
       },
       null,
       2
