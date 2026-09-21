@@ -7,7 +7,7 @@ export function validObservation():UniversalObservationV1{return {
  valuation:{nativeSettlementCurrency:'USD',reportingCurrency:'USD',conversion:'NONE'},
  provenance:{dataSource:'clob',feedType:'rest',snapshotOrIncremental:'SNAPSHOT',sourceTimestamp:1700000000000,receivedTimestamp:1700000000010,observationTimestamp:1700000000020,sourceClock:'LOCAL',depthCapability:'FULL_DEPTH',depthCapabilityBasis:'SOURCE_RESPONSE',quality:'VALID',qualityReasons:[]},
  sampling:{group:'DETERMINISTIC_CANDIDATE',discoveryReason:'fixture',eligibilityChecks:[]},
- relationship:{type:'COMPLEMENT',relatedInstrumentIds:['yes','no'],assumptions:[],requiredInputs:['books'],verification:{status:'VERIFIED',evidenceSource:'fixture-contract',reasons:[]}},
+ relationship:{type:'COMPLEMENT',relatedInstrumentIds:['yes','no'],assumptions:[],requiredInputs:['books'],verification:{status:'VERIFIED',evidenceSource:'fixture-contract',evidenceReference:'fixture://contract/yes-no',verifiedAt:1700000000005,reasons:[]}},
  deterministic:{status:'PASS',rejectionReasons:[],targetSize:{amount:10,unit:'PAIRED_SHARES'},expectedNetProfit:{amount:.2,currency:'USD'},worstCaseNetProfit:{amount:.1,currency:'USD'},depthSummary:{observedLevelsKnown:true,sufficientForTarget:true}},
  execution:{atomicity:'NON_ATOMIC',legCount:2,partialFillRisk:'UNKNOWN',hedgeCompletionStatus:'UNKNOWN',accessibilityStatus:'ACCESSIBLE'},
  classification:{opportunityClass:'STRUCTURAL',finalPaperDecision:'ACCEPT',reasons:[]},calibration:{persistence:[]}
