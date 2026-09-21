@@ -1,5 +1,5 @@
 /**
- * Polymarket Phase 4.x -> Universal Observation v1 adapter.
+ * Polymarket Phase 4.x -> Universal Observation v2 adapter.
  *
  * This adapter is deliberately conservative:
  * - public data can establish a deterministic paper candidate
@@ -22,6 +22,8 @@ export interface PolymarketUniversalAdapterInput {
   observationId: string;
   provenance: DataProvenance;
   sampling: SamplingMetadata;
+  relationshipVerification: UniversalObservationV1['relationship']['verification'];
+  nativeSettlementCurrency: string;
   versions: Omit<VersionMetadata, 'schemaVersion' | 'promptVersion'> & {
     promptVersion?: string;
   };
@@ -32,7 +34,8 @@ export function toUniversalPolymarketObservation(
 ): UniversalObservationV1 {
   const { observation, jev } = input;
   const quote = observation.result.quote;
-  const deterministicPass = observation.status === 'PAPER_EXECUTABLE';
+  const relationshipVerified = input.relationshipVerification.status === 'VERIFIED';
+  const deterministicPass = observation.status === 'PAPER_EXECUTABLE' && relationshipVerified;
 
   const universalJev = jev
     ? {
@@ -50,7 +53,10 @@ export function toUniversalPolymarketObservation(
   let finalPaperDecision: UniversalObservationV1['classification']['finalPaperDecision'];
   const reasons: string[] = [];
 
-  if (!deterministicPass) {
+  if (!relationshipVerified) {
+    finalPaperDecision = 'REVIEW';
+    reasons.push('RELATIONSHIP_NOT_VERIFIED');
+  } else if (!deterministicPass) {
     finalPaperDecision = 'REJECT';
     reasons.push(...observation.rejectionReasons);
   } else if (!jev) {
@@ -87,6 +93,7 @@ export function toUniversalPolymarketObservation(
       promptVersion: jev?.promptVersion ?? input.versions.promptVersion,
     },
     provenance: input.provenance,
+    valuation: { nativeSettlementCurrency: input.nativeSettlementCurrency, reportingCurrency: 'USD', conversion: input.nativeSettlementCurrency === 'USD' ? 'NONE' : 'FX' },
     sampling: input.sampling,
     relationship: {
       type: 'COMPLEMENT',
@@ -96,15 +103,11 @@ export function toUniversalPolymarketObservation(
         'paired payout relationship is valid for this market',
       ],
       requiredInputs: ['yes-orderbook', 'no-orderbook', 'fee-model', 'cost-model'],
-      verification: {
-        // Token resolution alone does not prove contract/resolution semantics.
-        status: 'UNVERIFIED',
-        reasons: ['RELATIONSHIP_SEMANTICS_NOT_YET_VERIFIED'],
-      },
+      verification: input.relationshipVerification,
     },
     deterministic: {
       status: deterministicPass ? 'PASS' : 'REJECT',
-      rejectionReasons: [...observation.rejectionReasons],
+      rejectionReasons: relationshipVerified ? [...observation.rejectionReasons] : ['RELATIONSHIP_NOT_VERIFIED', ...observation.rejectionReasons],
       targetSize: { amount: quote.targetPairShares, unit: 'PAIRED_SHARES' },
       expectedGrossProfit: { amount: quote.expectedGrossProfitUsd, currency: 'USD' },
       worstCaseGrossProfit: { amount: quote.worstCaseGrossProfitUsd, currency: 'USD' },
