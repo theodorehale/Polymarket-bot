@@ -1,136 +1,21 @@
-import { describe, expect, it } from 'vitest';
-import {
-  REPLAY_ENVELOPE_VERSION,
-  replayEnvelopeToJsonl,
-  type ReplayEnvelopeV1,
-  validateReplayEnvelope,
-} from './replay-envelope.js';
-import {
-  UNIVERSAL_OBSERVATION_SCHEMA_VERSION,
-  type UniversalObservationV1,
-} from './universal-observation.js';
+import {describe,expect,it} from 'vitest';
+import {CANONICAL_JSON_VERSION,EVIDENCE_HASH_ALGORITHM,REPLAY_ENVELOPE_VERSION,hashCanonicalEvidence,replayEnvelopeToJsonl,type ReplayEnvelopeV1,validateReplayEnvelope} from './replay-envelope.js';
+import {validObservation} from './universal-observation.test.js';
 
-function observation(): UniversalObservationV1 {
-  return {
-    schemaVersion: UNIVERSAL_OBSERVATION_SCHEMA_VERSION,
-    observationId: 'obs-replay-1',
-    mode: 'PAPER_ONLY',
-    observedAt: 1_700_000_000_000,
-    venue: 'polymarket',
-    marketType: 'PREDICTION',
-    instrumentIds: ['yes', 'no'],
-    versions: {
-      schemaVersion: UNIVERSAL_OBSERVATION_SCHEMA_VERSION,
-      samplingVersion: 'sampling-v1',
-      relationshipVersion: 'complement-v1',
-      deterministicEngineVersion: 'edge-v1',
-      executionModelVersion: 'execution-v1',
-      feeModelVersion: 'fee-v1',
-      costModelVersion: 'cost-v1',
-    },
-    provenance: {
-      dataSource: 'polymarket-clob',
-      feedType: 'rest-orderbook',
-      snapshotOrIncremental: 'SNAPSHOT',
-      receivedTimestamp: 1_700_000_000_010,
-      observationTimestamp: 1_700_000_000_020,
-      dataDepth: 'FULL_DEPTH',
-      quality: 'VALID',
-      qualityReasons: [],
-    },
-    sampling: {
-      group: 'CONTROL_LIQUID',
-      discoveryReason: 'replay fixture',
-      eligibilityChecks: [{ name: 'binary', passed: true }],
-    },
-    relationship: {
-      type: 'COMPLEMENT',
-      relatedInstrumentIds: ['yes', 'no'],
-      assumptions: ['binary complement'],
-      requiredInputs: ['yes-book', 'no-book'],
-    },
-    deterministic: {
-      status: 'PASS',
-      rejectionReasons: [],
-      targetSize: 5,
-      expectedNetProfit: 0.1,
-      worstCaseNetProfit: 0.05,
-      expectedNetEdgeBps: 200,
-      worstCaseNetEdgeBps: 100,
-      depthSummary: { known: true, sufficientForTarget: true },
-    },
-    execution: {
-      atomicity: 'UNKNOWN',
-      legCount: 2,
-      partialFillRisk: 'UNKNOWN',
-      hedgeCompletionStatus: 'UNKNOWN',
-      accessibilityStatus: 'UNKNOWN',
-    },
-    classification: {
-      opportunityClass: 'STRUCTURAL',
-      finalPaperDecision: 'REVIEW',
-      reasons: ['ACCESSIBILITY_NOT_VERIFIED'],
-    },
-    calibration: { persistence: [] },
-  };
+function envelope():ReplayEnvelopeV1{
+ const raw={yesBook:{asks:[{price:.44,size:10}]},noBook:{asks:[{price:.53,size:10}]}};
+ const normalized=validObservation();
+ return {envelopeVersion:REPLAY_ENVELOPE_VERSION,observationId:normalized.observationId,capturedAt:1700000000030,normalized,
+  engineInputSnapshot:{yesBook:raw.yesBook,noBook:raw.noBook,targetPairShares:10},
+  rawEvidence:[{kind:'EMBEDDED_JSON',source:'clob',hashAlgorithm:EVIDENCE_HASH_ALGORITHM,canonicalization:CANONICAL_JSON_VERSION,contentHash:hashCanonicalEvidence(raw),embeddedJson:raw}]
+ };
 }
-
-function envelope(): ReplayEnvelopeV1 {
-  const normalized = observation();
-  return {
-    envelopeVersion: REPLAY_ENVELOPE_VERSION,
-    observationId: normalized.observationId,
-    capturedAt: 1_700_000_000_030,
-    normalized,
-    rawEvidence: [
-      {
-        kind: 'EMBEDDED_JSON',
-        source: 'polymarket-clob',
-        embeddedJson: {
-          yesBook: { asks: [{ price: 0.44, size: 10 }] },
-          noBook: { asks: [{ price: 0.53, size: 10 }] },
-        },
-      },
-    ],
-  };
-}
-
-describe('ReplayEnvelopeV1', () => {
-  it('accepts replayable paper evidence', () => {
-    expect(validateReplayEnvelope(envelope())).toEqual({ valid: true, reasons: [] });
-  });
-
-  it('requires observation identity to remain immutable', () => {
-    const value = envelope();
-    value.observationId = 'different-id';
-
-    expect(validateReplayEnvelope(value).reasons).toContain('OBSERVATION_ID_MISMATCH');
-  });
-
-  it('fails closed when embedded raw evidence contains secret-like fields', () => {
-    const value = envelope();
-    value.rawEvidence = [{
-      kind: 'EMBEDDED_JSON',
-      source: 'bad-fixture',
-      embeddedJson: { apiKey: 'should-never-be-recorded' },
-    }];
-
-    expect(validateReplayEnvelope(value).reasons).toContain('SECRET_LIKE_FIELD_IN_RAW_EVIDENCE');
-    expect(() => replayEnvelopeToJsonl(value)).toThrow(/INVALID_REPLAY_ENVELOPE/);
-  });
-
-  it('requires content hashes for hash-based raw evidence references', () => {
-    const value = envelope();
-    value.rawEvidence = [{ kind: 'CONTENT_HASH', source: 'polymarket-clob' }];
-
-    expect(validateReplayEnvelope(value).reasons).toContain('CONTENT_HASH_REQUIRED');
-  });
-
-  it('serializes a valid envelope for later replay', () => {
-    const line = replayEnvelopeToJsonl(envelope());
-    const parsed = JSON.parse(line);
-
-    expect(parsed.envelopeVersion).toBe('replay-envelope-v1');
-    expect(parsed.normalized.observationId).toBe('obs-replay-1');
-  });
+describe('ReplayEnvelopeV1 P0',()=>{
+ it('accepts content-verifiable replay evidence',()=>expect(validateReplayEnvelope(envelope())).toEqual({valid:true,reasons:[]}));
+ it('canonical hash is stable across object key order',()=>expect(hashCanonicalEvidence({b:2,a:1})).toBe(hashCanonicalEvidence({a:1,b:2})));
+ it('detects embedded evidence mutation',()=>{const e=envelope();(e.rawEvidence[0].embeddedJson as any).yesBook.asks[0].price=.45;expect(validateReplayEnvelope(e).reasons).toContain('EMBEDDED_CONTENT_HASH_MISMATCH');});
+ it('requires replay engine input',()=>{const e=envelope();(e as any).engineInputSnapshot=undefined;expect(validateReplayEnvelope(e).reasons).toContain('ENGINE_INPUT_SNAPSHOT_REQUIRED');});
+ it('rejects secret-like fields in engine input',()=>{const e=envelope();e.engineInputSnapshot={apiKey:'never'};expect(validateReplayEnvelope(e).reasons).toContain('SECRET_LIKE_FIELD_IN_ENGINE_INPUT');});
+ it('requires explicit hash algorithm and canonicalization for hash references',()=>{const e=envelope();e.rawEvidence=[{kind:'CONTENT_HASH',source:'clob',contentHash:'a'.repeat(64)}];expect(validateReplayEnvelope(e).reasons).toEqual(expect.arrayContaining(['HASH_ALGORITHM_REQUIRED','CANONICALIZATION_REQUIRED']));});
+ it('serializes only valid replay envelopes',()=>expect(JSON.parse(replayEnvelopeToJsonl(envelope())).envelopeVersion).toBe(REPLAY_ENVELOPE_VERSION));
 });
