@@ -7,6 +7,7 @@
  */
 import { noul, TypeSafeClient } from '@typesafe-ai/sdk';
 import type { PaperObservation } from './public-market-observer.js';
+import { sanitizeExternalError } from '../research/security-boundary.js';
 
 export const JEV_PROMPT_VERSION = 'jev-paper-judge-v1' as const;
 export const DEFAULT_JEV_ACCEPT_THRESHOLD = 0.8 as const;
@@ -104,7 +105,7 @@ export async function judgePaperObservationWithJev(
   } catch (error) {
     return finish({
       status: 'JEV_UNAVAILABLE',
-      error: error instanceof Error ? error.message : 'UNKNOWN_JEV_ERROR',
+      error: sanitizeExternalError(error),
     });
   }
 }
