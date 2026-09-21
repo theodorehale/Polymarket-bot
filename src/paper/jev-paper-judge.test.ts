@@ -51,6 +51,9 @@ describe('judgePaperObservationWithJev', () => {
     });
     expect(r.status).toBe('ACCEPT');
     expect(r.probability).toBe(0.92);
+    expect(r.acceptThreshold).toBe(0.8);
+    expect(r.completedAt).toBeGreaterThanOrEqual(r.judgedAt);
+    expect(r.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
   it('routes a lower Jev probability to review rather than silently accepting it', async () => {
@@ -75,5 +78,16 @@ describe('judgePaperObservationWithJev', () => {
     const r = await judgePaperObservationWithJev(observation('PAPER_EXECUTABLE'), { client: client as never });
     expect(r.status).toBe('JEV_UNAVAILABLE');
     expect(r.error).toBe('INVALID_JEV_PROBABILITY');
+  });
+
+  it('fails closed on an invalid calibration threshold without calling Jev', async () => {
+    const systemOne = vi.fn();
+    const r = await judgePaperObservationWithJev(observation('PAPER_EXECUTABLE'), {
+      client: { systemOne } as never,
+      acceptThreshold: 1.2,
+    });
+    expect(r.status).toBe('JEV_UNAVAILABLE');
+    expect(r.error).toBe('INVALID_JEV_ACCEPT_THRESHOLD');
+    expect(systemOne).not.toHaveBeenCalled();
   });
 });
