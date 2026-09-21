@@ -21,6 +21,15 @@ describe('GammaApiClient external-input boundary', () => {
     await expect(client().getMarkets()).rejects.toThrow('INVALID_GAMMA_MARKET_SHAPE');
   });
 
+  it('fails closed when the external-input firewall rejects an oversized field', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([{
+      id: '1', conditionId: '0xabc', slug: 'test', question: 'x'.repeat(100_001),
+      outcomes: '["Yes","No"]', outcomePrices: '["0.5","0.5"]',
+      active: true, closed: false, endDate: '2028-01-01T00:00:00Z'
+    }]), { status: 200 })));
+    await expect(client().getMarkets()).rejects.toThrow('EXTERNAL_GAMMA_INPUT_REJECTED');
+  });
+
   it('does not fabricate a current end date when endDate is missing', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([{
       id: '1', conditionId: '0xabc', slug: 'test', question: 'test?',
