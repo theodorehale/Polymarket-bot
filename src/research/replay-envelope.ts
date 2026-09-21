@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { type UniversalObservationV1, validateUniversalObservation } from './universal-observation.js';
 import { containsSecretLikeMaterial } from './security-boundary.js';
 
-export const REPLAY_ENVELOPE_VERSION='replay-envelope-v1' as const;
+export const REPLAY_ENVELOPE_VERSION='replay-envelope-v2' as const;
 export const CANONICAL_JSON_VERSION='canonical-json-v1' as const;
 export const EVIDENCE_HASH_ALGORITHM='sha256' as const;
 
@@ -18,6 +18,7 @@ export interface RawEvidenceReference {
 export interface ReplayEnvelopeV1 {
   envelopeVersion:typeof REPLAY_ENVELOPE_VERSION; observationId:string; capturedAt:number;
   normalized:UniversalObservationV1; engineInputSnapshot:unknown; rawEvidence:RawEvidenceReference[];
+  manifest:{hashAlgorithm:typeof EVIDENCE_HASH_ALGORITHM;canonicalization:typeof CANONICAL_JSON_VERSION;engineInputHash:string;normalizedObservationHash:string;rawEvidenceManifestHash:string;};
 }
 export interface ReplayEnvelopeValidation {valid:boolean;reasons:string[];}
 
@@ -40,6 +41,13 @@ export function validateReplayEnvelope(e:ReplayEnvelopeV1):ReplayEnvelopeValidat
   if(!e.observationId||e.observationId!==e.normalized.observationId) reasons.push('OBSERVATION_ID_MISMATCH');
   if(!Number.isFinite(e.capturedAt)||e.capturedAt<=0) reasons.push('INVALID_CAPTURED_AT');
   if(e.engineInputSnapshot===undefined) reasons.push('ENGINE_INPUT_SNAPSHOT_REQUIRED');
+  try{
+    if(e.manifest.hashAlgorithm!==EVIDENCE_HASH_ALGORITHM) reasons.push('INVALID_MANIFEST_HASH_ALGORITHM');
+    if(e.manifest.canonicalization!==CANONICAL_JSON_VERSION) reasons.push('INVALID_MANIFEST_CANONICALIZATION');
+    if(e.engineInputSnapshot!==undefined&&e.manifest.engineInputHash!==hashCanonicalEvidence(e.engineInputSnapshot)) reasons.push('ENGINE_INPUT_HASH_MISMATCH');
+    if(e.manifest.normalizedObservationHash!==hashCanonicalEvidence(e.normalized)) reasons.push('NORMALIZED_OBSERVATION_HASH_MISMATCH');
+    if(e.manifest.rawEvidenceManifestHash!==hashCanonicalEvidence(e.rawEvidence)) reasons.push('RAW_EVIDENCE_MANIFEST_HASH_MISMATCH');
+  }catch{reasons.push('UNHASHABLE_REPLAY_MANIFEST');}
   if(containsSecretLikeMaterial(e.engineInputSnapshot)) reasons.push('SECRET_LIKE_FIELD_IN_ENGINE_INPUT');
   const ov=validateUniversalObservation(e.normalized);reasons.push(...ov.reasons.map(x=>'OBSERVATION_'+x));
   for(const x of e.rawEvidence){
@@ -66,4 +74,8 @@ export function validateReplayEnvelope(e:ReplayEnvelopeV1):ReplayEnvelopeValidat
 export function replayEnvelopeToJsonl(e:ReplayEnvelopeV1):string{
   const v=validateReplayEnvelope(e);if(!v.valid) throw new Error('INVALID_REPLAY_ENVELOPE:'+v.reasons.join(','));
   return JSON.stringify(e);
+}
+
+export function buildReplayManifest(normalized:UniversalObservationV1,engineInputSnapshot:unknown,rawEvidence:RawEvidenceReference[]):ReplayEnvelopeV1['manifest']{
+ return {hashAlgorithm:EVIDENCE_HASH_ALGORITHM,canonicalization:CANONICAL_JSON_VERSION,engineInputHash:hashCanonicalEvidence(engineInputSnapshot),normalizedObservationHash:hashCanonicalEvidence(normalized),rawEvidenceManifestHash:hashCanonicalEvidence(rawEvidence)};
 }
