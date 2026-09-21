@@ -27,7 +27,7 @@ export interface PublicDataProbeRecord {
 type ProbeMarketService=Pick<MarketService,'getClobMarket'|'getTokenOrderbook'>;
 
 function inspectBook(book:Orderbook,tokenId:string,now:number,maxAgeMs:number,issues:ProbeIssue[]){
- if(book.tokenId && book.tokenId!==tokenId) issues.push('BOOK_TOKEN_MISMATCH');
+ if(!book.tokenId || book.tokenId!==tokenId) issues.push('BOOK_TOKEN_MISMATCH');
  if(!Number.isFinite(book.timestamp)||book.timestamp<=0) issues.push('BOOK_TIMESTAMP_MISSING');
  else {
   if(book.timestamp>now) issues.push('BOOK_TIMESTAMP_FUTURE');
@@ -62,13 +62,13 @@ export async function probePublicMarket(
  if(issues.includes('EXTERNAL_INPUT_REJECTED')||market.tokens.length!==2)
   return {mode:'PAPER_ONLY',purpose:'ADVERSARIAL_DATA_QUALITY',conditionId,receivedAt,market:marketEvidence,issues:[...new Set(issues)],errors};
 
- const books:Orderbook[]=[];
+ const books:Array<{requestedTokenId:string;book:Orderbook}>=[];
  for(const token of market.tokens){
-  try{const b=await service.getTokenOrderbook(token.tokenId);inspectBook(b,token.tokenId,now(),maxAgeMs,issues);books.push(b);}
+  try{const b=await service.getTokenOrderbook(token.tokenId);inspectBook(b,token.tokenId,now(),maxAgeMs,issues);books.push({requestedTokenId:token.tokenId,book:b});}
   catch(e){issues.push('BOOK_FETCH_FAILED');errors.push(sanitizeExternalError(e));}
  }
- if(books.length===2&&Number.isFinite(books[0].timestamp)&&Number.isFinite(books[1].timestamp)&&Math.abs(books[0].timestamp-books[1].timestamp)>maxSkewMs) issues.push('BOOK_SKEW');
+ if(books.length===2&&Number.isFinite(books[0].book.timestamp)&&Number.isFinite(books[1].book.timestamp)&&Math.abs(books[0].book.timestamp-books[1].book.timestamp)>maxSkewMs) issues.push('BOOK_SKEW');
  return {mode:'PAPER_ONLY',purpose:'ADVERSARIAL_DATA_QUALITY',conditionId,receivedAt,market:marketEvidence,
-  books:books.map((b,i)=>({requestedTokenId:market!.tokens[i].tokenId,returnedTokenId:b.tokenId,timestamp:b.timestamp,bids:b.bids.length,asks:b.asks.length})),
+  books:books.map(({requestedTokenId,book:b})=>({requestedTokenId,returnedTokenId:b.tokenId,timestamp:b.timestamp,bids:b.bids.length,asks:b.asks.length})),
   issues:[...new Set(issues)],errors};
 }
