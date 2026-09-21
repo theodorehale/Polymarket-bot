@@ -32,7 +32,7 @@ function observation(status: PaperObservation['status']): PaperObservation {
         rejectionReasons: status === 'REJECTED' ? ['NEGATIVE_NET_EDGE'] : [],
       },
     },
-  } as PaperObservation;
+  } as unknown as PaperObservation;
 }
 
 describe('judgePaperObservationWithJev', () => {
