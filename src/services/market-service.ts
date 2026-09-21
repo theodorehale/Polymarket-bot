@@ -351,7 +351,7 @@ export class MarketService {
         assetId: book.asset_id, // Backward compatibility
         bids,
         asks,
-        timestamp: parseInt(book.timestamp || '0', 10) || Date.now(),
+        timestamp: parseInt(book.timestamp || '0', 10) || 0,
         market: book.market,
         hash: book.hash,
       };
@@ -393,7 +393,7 @@ export class MarketService {
           assetId: book.asset_id, // Backward compatibility
           bids,
           asks,
-          timestamp: parseInt(book.timestamp || '0', 10) || Date.now(),
+          timestamp: parseInt(book.timestamp || '0', 10) || 0,
           market: book.market,
           hash: book.hash,
         });
