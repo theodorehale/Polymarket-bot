@@ -320,7 +320,7 @@ describe('outcome tracking from verified replay input', () => {
     expect(staleResult.reasons).toContain('FOLLOWUP_BOOKS_NOT_FRESH');
   });
 
-  it('uses INDETERMINATE before the horizon and EXPIRED only for run-policy expiry', () => {
+  it('keeps lifecycle expiry separate from market evidence time', () => {
     const d = definition(2_000);
     const r = relationship();
     const opened = openOrReuseHypothesisRun({
@@ -332,29 +332,104 @@ describe('outcome tracking from verified replay input', () => {
       relationshipVerification: VERIFIED_RELATIONSHIP,
     });
     const run = reduceHypothesisEvents([opened.event!]).runs[opened.hypothesisRunId];
-    const evidence = replay({
+    const preExpiryEvidence = replay({
       observationId: 'obs-1',
       observedAt: 11_000,
       yesAsk: 0.44,
       noAsk: 0.53,
     });
-    expect(evaluateHypothesisOutcome({
-      definition: d,
-      relationship: r,
-      run,
-      followupReplay: evidence,
-      horizonMs: 1_500,
-      checkedAt: 11_000,
-    }).result).toBe('INDETERMINATE');
 
     expect(evaluateHypothesisOutcome({
       definition: d,
       relationship: r,
       run,
-      followupReplay: evidence,
+      followupReplay: preExpiryEvidence,
+      horizonMs: 1_500,
+      checkedAt: 11_000,
+    }).result).toBe('INDETERMINATE');
+
+    const checkedAfterExpiry = evaluateHypothesisOutcome({
+      definition: d,
+      relationship: r,
+      run,
+      followupReplay: preExpiryEvidence,
       horizonMs: 1_000,
       checkedAt: 13_000,
-    }).result).toBe('EXPIRED');
+    });
+    expect(checkedAfterExpiry.result).toBe('NOT_EVALUABLE');
+    expect(checkedAfterExpiry.reasons).toContain('RUN_POLICY_EXPIRED_REQUIRES_LIFECYCLE_CLOSE');
+
+    const postExpiryEvidence = replay({
+      observationId: 'obs-post-expiry',
+      observedAt: 13_000,
+      yesAsk: 0.44,
+      noAsk: 0.53,
+    });
+    const postExpiryCheck = evaluateHypothesisOutcome({
+      definition: d,
+      relationship: r,
+      run,
+      followupReplay: postExpiryEvidence,
+      horizonMs: 2_000,
+      checkedAt: 13_000,
+    });
+    expect(postExpiryCheck.result).toBe('NOT_EVALUABLE');
+    expect(postExpiryCheck.reasons).toContain('RUN_POLICY_EXPIRED_REQUIRES_LIFECYCLE_CLOSE');
+  });
+
+  it('fails closed at outcome evaluation when Definition content is tampered under the old ID', () => {
+    const { d, r, run } = openRun();
+    const tampered = {
+      ...d,
+      policy: {
+        ...d.policy,
+        thresholds: {
+          ...d.policy.thresholds,
+          minExpectedNetEdgeBps: d.policy.thresholds.minExpectedNetEdgeBps + 1,
+        },
+      },
+    };
+    const result = evaluateHypothesisOutcome({
+      definition: tampered,
+      relationship: r,
+      run,
+      followupReplay: replay({
+        observationId: 'obs-tampered-definition',
+        observedAt: 11_000,
+        yesAsk: 0.44,
+        noAsk: 0.53,
+      }),
+      horizonMs: 1_000,
+      checkedAt: 11_000,
+    });
+    expect(result.result).toBe('NOT_EVALUABLE');
+    expect(result.reasons).toContain('HYPOTHESIS_DEFINITION_ID_MISMATCH');
+  });
+
+  it('fails closed at outcome evaluation when Relationship role content is tampered under the old ID', () => {
+    const { d, r, run } = openRun();
+    const tampered = {
+      ...r,
+      legs: [
+        { role: 'YES', instrumentId: 'no-1' },
+        { role: 'NO', instrumentId: 'yes-1' },
+      ],
+    };
+    const result = evaluateHypothesisOutcome({
+      definition: d,
+      relationship: tampered,
+      run,
+      followupReplay: replay({
+        observationId: 'obs-tampered-relationship',
+        observedAt: 11_000,
+        yesAsk: 0.44,
+        noAsk: 0.53,
+      }),
+      horizonMs: 1_000,
+      checkedAt: 11_000,
+    });
+    expect(result.result).toBe('NOT_EVALUABLE');
+    expect(result.reasons).toContain('RELATIONSHIP_INSTANCE_ID_MISMATCH');
   });
 });
 
