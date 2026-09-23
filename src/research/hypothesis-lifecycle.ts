@@ -187,9 +187,16 @@ function validateThresholds(thresholds: HypothesisThresholdPolicy): void {
   }
 }
 
-export function createHypothesisDefinition(
-  input: HypothesisDefinitionInput
-): HypothesisDefinition {
+function canonicalHypothesisDefinitionContent(input: {
+  schemaVersion?: string;
+  relationshipType: RelationshipMetadata['type'];
+  claim: 'EXECUTABLE_NET_EDGE';
+  direction: HypothesisDirection;
+  policy: HypothesisPolicy | HypothesisDefinitionInput['policy'];
+}) {
+  if (input.schemaVersion !== undefined && input.schemaVersion !== HYPOTHESIS_DEFINITION_VERSION) {
+    throw new Error('INVALID_HYPOTHESIS_DEFINITION_VERSION');
+  }
   if (input.claim !== 'EXECUTABLE_NET_EDGE') throw new Error('UNSUPPORTED_HYPOTHESIS_CLAIM');
   if (input.direction !== 'long' && input.direction !== 'short') {
     throw new Error('INVALID_HYPOTHESIS_DIRECTION');
@@ -217,10 +224,9 @@ export function createHypothesisDefinition(
   ) {
     throw new Error('INVALID_HYPOTHESIS_MAX_RUN_AGE');
   }
-
   const thresholds = normalizeThresholds(input.policy.thresholds);
   validateThresholds(thresholds);
-  const canonical = {
+  return {
     schemaVersion: HYPOTHESIS_DEFINITION_VERSION,
     relationshipType: input.relationshipType,
     claim: input.claim,
@@ -237,10 +243,37 @@ export function createHypothesisDefinition(
         : { maxRunAgeMs: input.policy.maxRunAgeMs }),
     },
   };
+}
+
+export function recomputeHypothesisDefinitionId(
+  definition: Omit<HypothesisDefinition, 'hypothesisDefinitionId'> | HypothesisDefinition
+): string {
+  const canonical = canonicalHypothesisDefinitionContent(definition);
+  return `hdef_${hashCanonicalEvidence(canonical)}`;
+}
+
+export function assertHypothesisDefinitionIdentity(
+  definition: HypothesisDefinition
+): void {
+  if (recomputeHypothesisDefinitionId(definition) !== definition.hypothesisDefinitionId) {
+    throw new Error('HYPOTHESIS_DEFINITION_ID_MISMATCH');
+  }
+}
+
+export function createHypothesisDefinition(
+  input: HypothesisDefinitionInput
+): HypothesisDefinition {
+  const canonical = canonicalHypothesisDefinitionContent(input);
   return {
     ...canonical,
     hypothesisDefinitionId: `hdef_${hashCanonicalEvidence(canonical)}`,
   };
+}
+
+function normalizeConditionId(conditionId: string | undefined): string | undefined {
+  if (conditionId === undefined) return undefined;
+  const normalized = conditionId.trim();
+  return normalized || undefined;
 }
 
 function canonicalizeRelationshipLegs(legs: readonly RelationshipLeg[]): RelationshipLeg[] {
@@ -258,19 +291,50 @@ function canonicalizeRelationshipLegs(legs: readonly RelationshipLeg[]): Relatio
   return normalized.sort((a, b) => a.role.localeCompare(b.role));
 }
 
+function canonicalRelationshipInstanceContent(input: {
+  schemaVersion?: string;
+  venue: string;
+  marketType: MarketType;
+  relationshipType: RelationshipMetadata['type'];
+  conditionId?: string;
+  legs: readonly RelationshipLeg[];
+}) {
+  if (input.schemaVersion !== undefined && input.schemaVersion !== RELATIONSHIP_INSTANCE_VERSION) {
+    throw new Error('INVALID_RELATIONSHIP_INSTANCE_VERSION');
+  }
+  const venue = input.venue.trim();
+  if (!venue) throw new Error('MISSING_RELATIONSHIP_VENUE');
+  const conditionId = normalizeConditionId(input.conditionId);
+  const legs = canonicalizeRelationshipLegs(input.legs);
+  return {
+    schemaVersion: RELATIONSHIP_INSTANCE_VERSION,
+    venue,
+    marketType: input.marketType,
+    relationshipType: input.relationshipType,
+    ...(conditionId === undefined ? {} : { conditionId }),
+    legs,
+  };
+}
+
+export function recomputeRelationshipInstanceId(
+  relationship: Omit<RelationshipInstance, 'relationshipInstanceId'> | RelationshipInstance
+): string {
+  const canonical = canonicalRelationshipInstanceContent(relationship);
+  return `rinst_${hashCanonicalEvidence(canonical)}`;
+}
+
+export function assertRelationshipInstanceIdentity(
+  relationship: RelationshipInstance
+): void {
+  if (recomputeRelationshipInstanceId(relationship) !== relationship.relationshipInstanceId) {
+    throw new Error('RELATIONSHIP_INSTANCE_ID_MISMATCH');
+  }
+}
+
 export function createRelationshipInstance(
   input: RelationshipInstanceInput
 ): RelationshipInstance {
-  if (!input.venue.trim()) throw new Error('MISSING_RELATIONSHIP_VENUE');
-  const legs = canonicalizeRelationshipLegs(input.legs);
-  const canonical = {
-    schemaVersion: RELATIONSHIP_INSTANCE_VERSION,
-    venue: input.venue.trim(),
-    marketType: input.marketType,
-    relationshipType: input.relationshipType,
-    ...(input.conditionId ? { conditionId: input.conditionId } : {}),
-    legs,
-  };
+  const canonical = canonicalRelationshipInstanceContent(input);
   return {
     ...canonical,
     relationshipInstanceId: `rinst_${hashCanonicalEvidence(canonical)}`,
@@ -331,6 +395,8 @@ export function makeRunOpenedEvent(input: {
   openedAt: number;
   relationshipVerification: RelationshipMetadata['verification'];
 }): HypothesisEvent {
+  assertHypothesisDefinitionIdentity(input.definition);
+  assertRelationshipInstanceIdentity(input.relationship);
   if (input.definition.relationshipType !== input.relationship.relationshipType) {
     throw new Error('DEFINITION_RELATIONSHIP_TYPE_MISMATCH');
   }
@@ -372,6 +438,29 @@ export function makeOutcomeCheckedEvent(
     outcome,
   };
   return { ...payload, eventId: makeEventId(payload) };
+}
+
+export function makeRunLifecycleExpiryEvent(input: {
+  definition: HypothesisDefinition;
+  run: HypothesisRunState;
+  at: number;
+}): HypothesisEvent {
+  assertHypothesisDefinitionIdentity(input.definition);
+  if (input.run.hypothesisDefinitionId !== input.definition.hypothesisDefinitionId) {
+    throw new Error('RUN_DEFINITION_ID_MISMATCH');
+  }
+  if (input.run.state !== 'OPEN') throw new Error('RUN_NOT_OPEN');
+  const maxRunAgeMs = input.definition.policy.maxRunAgeMs;
+  if (maxRunAgeMs === undefined) throw new Error('RUN_HAS_NO_LIFECYCLE_EXPIRY');
+  const expiresAt = input.run.openedAt + maxRunAgeMs;
+  if (!finitePositive(input.at) || input.at < expiresAt) {
+    throw new Error('RUN_LIFECYCLE_EXPIRY_NOT_REACHED');
+  }
+  return makeRunClosedEvent({
+    hypothesisRunId: input.run.hypothesisRunId,
+    closedAt: input.at,
+    reason: 'RUN_POLICY_EXPIRED',
+  });
 }
 
 export function makeRunClosedEvent(input: {
@@ -495,6 +584,8 @@ export function openOrReuseHypothesisRun(input: {
   openedAt: number;
   relationshipVerification: RelationshipMetadata['verification'];
 }): OpenOrReuseRunResult {
+  assertHypothesisDefinitionIdentity(input.definition);
+  assertRelationshipInstanceIdentity(input.relationship);
   if (input.definition.relationshipType !== input.relationship.relationshipType) {
     throw new Error('DEFINITION_RELATIONSHIP_TYPE_MISMATCH');
   }
