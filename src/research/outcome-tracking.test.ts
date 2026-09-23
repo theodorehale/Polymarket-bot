@@ -207,15 +207,20 @@ function replay(input: {
   const normalized = normalizedObservation(input);
   const engine = engineInput(input.observedAt, input.yesAsk, input.noAsk);
   input.mutateEngineInput?.(engine);
+  const {
+    yesTokenId: _yesTokenId,
+    noTokenId: _noTokenId,
+    ...replayEngineInput
+  } = engine;
   const rawEvidence: ReplayEnvelopeV1['rawEvidence'] = [];
   return {
     envelopeVersion: REPLAY_ENVELOPE_VERSION,
     observationId: normalized.observationId,
     capturedAt: input.observedAt,
     normalized,
-    engineInputSnapshot: engine,
+    engineInputSnapshot: replayEngineInput,
     rawEvidence,
-    manifest: buildReplayManifest(normalized, engine, rawEvidence),
+    manifest: buildReplayManifest(normalized, replayEngineInput, rawEvidence),
   };
 }
 
