@@ -13,6 +13,8 @@ import {
   type HypothesisRunState,
   type OutcomeCheckResult,
   type RelationshipInstance,
+  assertHypothesisDefinitionIdentity,
+  assertRelationshipInstanceIdentity,
   instrumentForRole,
 } from './hypothesis-lifecycle.js';
 
@@ -258,6 +260,22 @@ function buildRecord(input: EvaluateOutcomeInput, args: {
 export function evaluateHypothesisOutcome(
   input: EvaluateOutcomeInput
 ): HypothesisOutcomeCheckRecord {
+  try {
+    assertHypothesisDefinitionIdentity(input.definition);
+  } catch {
+    return buildRecord(input, {
+      result: 'NOT_EVALUABLE',
+      reasons: ['HYPOTHESIS_DEFINITION_ID_MISMATCH'],
+    });
+  }
+  try {
+    assertRelationshipInstanceIdentity(input.relationship);
+  } catch {
+    return buildRecord(input, {
+      result: 'NOT_EVALUABLE',
+      reasons: ['RELATIONSHIP_INSTANCE_ID_MISMATCH'],
+    });
+  }
   if (input.run.state !== 'OPEN') {
     return buildRecord(input, { result: 'NOT_EVALUABLE', reasons: ['RUN_NOT_OPEN'] });
   }
@@ -275,6 +293,20 @@ export function evaluateHypothesisOutcome(
   }
   if (!Number.isFinite(input.checkedAt) || input.checkedAt <= 0) {
     return buildRecord(input, { result: 'NOT_EVALUABLE', reasons: ['INVALID_OUTCOME_CHECK_TIME'] });
+  }
+
+  // Run expiry is a lifecycle-clock policy, not a market-evidence outcome.
+  // Once the clock reaches expiry, callers must append a RUN_CLOSED lifecycle event.
+  // A market snapshot captured before expiry can never be relabeled as EXPIRED merely
+  // because evaluation happened later.
+  if (
+    input.definition.policy.maxRunAgeMs !== undefined &&
+    input.checkedAt >= input.run.openedAt + input.definition.policy.maxRunAgeMs
+  ) {
+    return buildRecord(input, {
+      result: 'NOT_EVALUABLE',
+      reasons: ['RUN_POLICY_EXPIRED_REQUIRES_LIFECYCLE_CLOSE'],
+    });
   }
 
   // Every canonical outcome check starts from a validated replay artifact.
@@ -383,17 +415,6 @@ export function evaluateHypothesisOutcome(
     return buildRecord(input, {
       result: 'NOT_EVALUABLE',
       reasons: evidenceInvalid,
-      recomputedQuote: quote,
-    });
-  }
-
-  if (
-    input.definition.policy.maxRunAgeMs !== undefined &&
-    input.checkedAt > input.run.openedAt + input.definition.policy.maxRunAgeMs
-  ) {
-    return buildRecord(input, {
-      result: 'EXPIRED',
-      reasons: ['RUN_POLICY_EXPIRED'],
       recomputedQuote: quote,
     });
   }
