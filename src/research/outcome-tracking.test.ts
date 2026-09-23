@@ -211,7 +211,7 @@ function replay(input: {
   return {
     envelopeVersion: REPLAY_ENVELOPE_VERSION,
     observationId: normalized.observationId,
-    capturedAt: input.observedAt + 1,
+    capturedAt: input.observedAt,
     normalized,
     engineInputSnapshot: engine,
     rawEvidence,
