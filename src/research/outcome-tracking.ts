@@ -41,10 +41,13 @@ function hasBookShape(value: unknown): boolean {
   );
 }
 
-function asExecutableQuoteInput(value: unknown): ExecutableQuoteInput | null {
+function asExecutableQuoteInput(
+  value: unknown,
+  yesTokenId: string,
+  noTokenId: string
+): ExecutableQuoteInput | null {
   if (!isRecord(value)) return null;
   if (value.type !== 'long' && value.type !== 'short') return null;
-  if (typeof value.yesTokenId !== 'string' || typeof value.noTokenId !== 'string') return null;
   if (!hasBookShape(value.yesBook) || !hasBookShape(value.noBook)) return null;
   if (typeof value.targetPairShares !== 'number' || !Number.isFinite(value.targetPairShares)) return null;
   if (!isRecord(value.yesFee) || !isRecord(value.noFee) || !isRecord(value.costs)) return null;
@@ -53,7 +56,11 @@ function asExecutableQuoteInput(value: unknown): ExecutableQuoteInput | null {
     typeof value.maxBookAgeMs !== 'number' || !Number.isFinite(value.maxBookAgeMs) ||
     typeof value.maxBookSkewMs !== 'number' || !Number.isFinite(value.maxBookSkewMs)
   ) return null;
-  return value as unknown as ExecutableQuoteInput;
+  return {
+    ...(value as unknown as Omit<ExecutableQuoteInput, 'yesTokenId' | 'noTokenId'>),
+    yesTokenId,
+    noTokenId,
+  };
 }
 
 function normalizedThresholds(input: ExecutableQuoteInput) {
@@ -314,7 +321,19 @@ export function evaluateHypothesisOutcome(
     return buildRecord(input, { result: 'NOT_EVALUABLE', reasons: relationshipReasons });
   }
 
-  const engineInput = asExecutableQuoteInput(input.followupReplay.engineInputSnapshot);
+  const yesTokenId = instrumentForRole(input.relationship, 'YES');
+  const noTokenId = instrumentForRole(input.relationship, 'NO');
+  if (!yesTokenId || !noTokenId) {
+    return buildRecord(input, {
+      result: 'NOT_EVALUABLE',
+      reasons: ['RELATIONSHIP_INSTANCE_REQUIRES_YES_NO_ROLES'],
+    });
+  }
+  const engineInput = asExecutableQuoteInput(
+    input.followupReplay.engineInputSnapshot,
+    yesTokenId,
+    noTokenId
+  );
   if (!engineInput) {
     return buildRecord(input, {
       result: 'NOT_EVALUABLE',
