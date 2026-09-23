@@ -3,6 +3,7 @@ import {
   createHypothesisDefinition,
   createRelationshipInstance,
   makeOutcomeCheckedEvent,
+  makeRunLifecycleExpiryEvent,
   makeRunOpenedEvent,
   openOrReuseHypothesisRun,
   reduceHypothesisEvents,
@@ -118,6 +119,114 @@ describe('hypothesis identity and lifecycle', () => {
 
     expect(sameSemanticsDifferentInputOrder.relationshipInstanceId).toBe(a.relationshipInstanceId);
     expect(swappedRoles.relationshipInstanceId).not.toBe(a.relationshipInstanceId);
+  });
+
+  it('normalizes optional conditionId by trimming without lowercasing identifiers', () => {
+    const trimmed = createRelationshipInstance({
+      venue: 'polymarket',
+      marketType: 'PREDICTION',
+      relationshipType: 'COMPLEMENT',
+      conditionId: '  condition-1  ',
+      legs: [
+        { role: 'YES', instrumentId: 'yes-1' },
+        { role: 'NO', instrumentId: 'no-1' },
+      ],
+    });
+    const canonical = relationship();
+    const differentCase = createRelationshipInstance({
+      venue: 'polymarket',
+      marketType: 'PREDICTION',
+      relationshipType: 'COMPLEMENT',
+      conditionId: 'Condition-1',
+      legs: [
+        { role: 'YES', instrumentId: 'yes-1' },
+        { role: 'NO', instrumentId: 'no-1' },
+      ],
+    });
+
+    expect(trimmed.conditionId).toBe('condition-1');
+    expect(trimmed.relationshipInstanceId).toBe(canonical.relationshipInstanceId);
+    expect(differentCase.conditionId).toBe('Condition-1');
+    expect(differentCase.relationshipInstanceId).not.toBe(canonical.relationshipInstanceId);
+  });
+
+  it('rejects a tampered Definition whose stored ID no longer matches its policy content', () => {
+    const d = definition();
+    const tampered = {
+      ...d,
+      policy: {
+        ...d.policy,
+        thresholds: {
+          ...d.policy.thresholds,
+          minWorstCaseNetProfitUsd: d.policy.thresholds.minWorstCaseNetProfitUsd + 1,
+        },
+      },
+    };
+    expect(() => openOrReuseHypothesisRun({
+      events: [],
+      definition: tampered,
+      relationship: relationship(),
+      openingObservationId: 'obs-tampered-definition',
+      openedAt: 1_000,
+      relationshipVerification: VERIFIED_RELATIONSHIP,
+    })).toThrow('HYPOTHESIS_DEFINITION_ID_MISMATCH');
+  });
+
+  it('rejects a tampered RelationshipInstance whose stored ID no longer matches YES/NO roles', () => {
+    const r = relationship();
+    const tampered = {
+      ...r,
+      legs: [
+        { role: 'YES', instrumentId: 'no-1' },
+        { role: 'NO', instrumentId: 'yes-1' },
+      ],
+    };
+    expect(() => openOrReuseHypothesisRun({
+      events: [],
+      definition: definition(),
+      relationship: tampered,
+      openingObservationId: 'obs-tampered-relationship',
+      openedAt: 1_000,
+      relationshipVerification: VERIFIED_RELATIONSHIP,
+    })).toThrow('RELATIONSHIP_INSTANCE_ID_MISMATCH');
+  });
+
+  it('closes lifecycle expiry from the run clock, not from market evidence', () => {
+    const base = definition();
+    const d = createHypothesisDefinition({
+      relationshipType: base.relationshipType,
+      claim: base.claim,
+      direction: base.direction,
+      policy: { ...base.policy, maxRunAgeMs: 1_000 },
+    });
+    const opened = openOrReuseHypothesisRun({
+      events: [],
+      definition: d,
+      relationship: relationship(),
+      openingObservationId: 'obs-expiry',
+      openedAt: 1_000,
+      relationshipVerification: VERIFIED_RELATIONSHIP,
+    });
+    const events = [opened.event!];
+    const run = reduceHypothesisEvents(events).runs[opened.hypothesisRunId];
+
+    expect(() => makeRunLifecycleExpiryEvent({
+      definition: d,
+      run,
+      at: 1_999,
+    })).toThrow('RUN_LIFECYCLE_EXPIRY_NOT_REACHED');
+
+    const expiry = makeRunLifecycleExpiryEvent({
+      definition: d,
+      run,
+      at: 2_000,
+    });
+    expect(expiry.type).toBe('RUN_CLOSED');
+    if (expiry.type === 'RUN_CLOSED') expect(expiry.reason).toBe('RUN_POLICY_EXPIRED');
+
+    const final = reduceHypothesisEvents([...events, expiry]);
+    expect(final.runs[opened.hypothesisRunId].state).toBe('CLOSED');
+    expect(final.runs[opened.hypothesisRunId].closeReason).toBe('RUN_POLICY_EXPIRED');
   });
 
   it('requires verified relationship evidence before opening or reusing a run', () => {
