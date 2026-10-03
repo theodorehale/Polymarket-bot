@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { BinanceWsCollector } from './binance-ws-collector.js';
 import { PolymarketRtdsCollector } from './polymarket-rtds-collector.js';
 import { discoverBtcFiveMinuteMarket } from './market-discovery.js';
+import { LeadLagDetector } from './lead-lag-detector.js';
 
 interface PersistedEnvelope {
   recordedAtMs: number;
@@ -48,6 +49,8 @@ const outputPath = resolve(
   process.env.HALE_5M_OUTPUT ?? 'data/microstructure/hale-5m-events.jsonl',
 );
 
+const detector = new LeadLagDetector();
+
 const binance = new BinanceWsCollector({
   symbol: process.env.BINANCE_SYMBOL ?? 'btcusdt',
 });
@@ -66,6 +69,7 @@ binance.connect(event => {
     accepted: true,
     event,
   });
+  detector.onBinance(event);
 });
 
 polymarket.connect((result, raw) => {
@@ -78,6 +82,15 @@ polymarket.connect((result, raw) => {
       reason: result.evidence.reason,
       event: result.event,
     });
+    for (const observation of detector.onPolymarket(result.event)) {
+      appendJsonl(outputPath, {
+        recordedAtMs: Date.now(),
+        stream: 'polymarket',
+        accepted: true,
+        reason: 'LEAD_LAG_OBSERVATION',
+        event: observation,
+      });
+    }
     return;
   }
 
