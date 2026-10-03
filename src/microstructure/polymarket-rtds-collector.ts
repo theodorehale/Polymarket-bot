@@ -56,7 +56,7 @@ export class PolymarketRtdsCollector {
             topic: message.topic,
             type: message.type,
             timestamp: message.timestamp,
-            payload: message.payload as unknown,
+            payload: message.payload as import('./polymarket-rtds-adapter.js').RawClobBook | undefined,
           },
           receivedAtMs,
           monotonicReceivedNs,
