@@ -14,13 +14,14 @@ export function computeMarkouts(
  horizons=[100,250,500,1000,5000],
 ):Markout[]{
  if(attempt.status!=='PAPER_FILLED'||attempt.executablePrice===undefined) return [];
+ const executablePrice = attempt.executablePrice;
  return horizons.map(h=>{
    const target=attempt.hypotheticalArrivalAtMs+h;
    const b=books.filter(x=>x.tokenId===attempt.tokenId&&x.clock.receivedAtMs>=target)
      .sort((a,b)=>a.clock.receivedAtMs-b.clock.receivedAtMs)[0];
    if(!b) return {attemptId:attempt.attemptId,horizonMs:h,status:'MISSING'};
    const m=mid(b); if(m===undefined) return {attemptId:attempt.attemptId,horizonMs:h,status:'MISSING'};
-   const signed=attempt.side==='BUY'?m-attempt.executablePrice:attempt.executablePrice-m;
+   const signed=attempt.side==='BUY'?m-executablePrice:executablePrice-m;
    return {attemptId:attempt.attemptId,horizonMs:h,observedAtMs:b.clock.receivedAtMs,midPrice:m,signedMarkout:signed,status:'OBSERVED'};
  });
 }
