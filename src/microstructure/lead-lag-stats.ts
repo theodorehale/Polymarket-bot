@@ -18,7 +18,7 @@ function percentile(sorted: number[], p: number): number | undefined {
 export function summarizeLeadLag(observations: LeadLagObservation[]): LeadLagSummary {
   const values = observations
     .map(x => x.spotToPolyRepriceMs)
-    .filter((x): x is number => Number.isFinite(x) && x >= 0)
+    .filter((x): x is number => typeof x === 'number' && Number.isFinite(x) && x >= 0)
     .sort((a, b) => a - b);
 
   return {
