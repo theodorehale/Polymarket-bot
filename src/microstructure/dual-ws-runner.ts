@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { BinanceWsCollector } from './binance-ws-collector.js';
 import { PolymarketRtdsCollector } from './polymarket-rtds-collector.js';
+import { discoverBtcFiveMinuteMarket } from './market-discovery.js';
 
 interface PersistedEnvelope {
   recordedAtMs: number;
@@ -17,13 +18,30 @@ function appendJsonl(path: string, row: PersistedEnvelope): void {
   appendFileSync(path, JSON.stringify(row) + '\n', 'utf8');
 }
 
-const tokenIds = (process.env.POLYMARKET_TOKEN_IDS ?? '')
+const configuredTokenIds = (process.env.POLYMARKET_TOKEN_IDS ?? '')
   .split(',')
   .map(x => x.trim())
   .filter(Boolean);
 
-if (tokenIds.length === 0) {
-  throw new Error('Set POLYMARKET_TOKEN_IDS as a comma-separated list before starting the paper collector');
+const discoveredMarket = configuredTokenIds.length === 0
+  ? await discoverBtcFiveMinuteMarket()
+  : undefined;
+
+const tokenIds = configuredTokenIds.length > 0
+  ? configuredTokenIds
+  : discoveredMarket!.tokenIds;
+
+if (discoveredMarket) {
+  process.stdout.write(JSON.stringify({
+    discovery: 'BTC_5M_MARKET',
+    id: discoveredMarket.id,
+    conditionId: discoveredMarket.conditionId,
+    slug: discoveredMarket.slug,
+    question: discoveredMarket.question,
+    endDate: discoveredMarket.endDate,
+    outcomes: discoveredMarket.outcomes,
+    tokenIds: discoveredMarket.tokenIds,
+  }) + '\n');
 }
 
 const outputPath = resolve(
