@@ -27,6 +27,10 @@ jobs:
           timeout --signal=TERM 45s npm run microstructure:collect | tee /tmp/hale-smoke.log
           code=${PIPESTATUS[0]}
           set -e
+          if grep -q "Unexpected server response: 451" /tmp/hale-smoke.log; then
+            echo "POLYMARKET_RTDS_ENVIRONMENT_BLOCKED_451"
+            exit 78
+          fi
           if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
           test -s data/microstructure/hale-5m-events.jsonl
           node - <<'NODE'
