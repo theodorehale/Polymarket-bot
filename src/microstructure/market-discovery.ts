@@ -55,11 +55,12 @@ export async function discoverBtcFiveMinuteMarket(
   const currentStartSec = Math.floor(nowMs / 1000 / windowSec) * windowSec;
   const slugs = [-1, 0, 1, 2].map(offset => `btc-updown-5m-${currentStartSec + offset * windowSec}`);
   const responses = await Promise.all(slugs.map(async slug => {
-    const url = new URL('https://gamma-api.polymarket.com/markets');
-    url.searchParams.set('slug', slug);
+    const url = new URL(`https://gamma-api.polymarket.com/markets/slug/${encodeURIComponent(slug)}`);
     const response = await fetch(url);
+    if (response.status === 404) return [];
     if (!response.ok) throw new Error(`Gamma discovery failed for ${slug}: HTTP ${response.status}`);
-    return await response.json() as GammaMarket[];
+    const market = await response.json() as GammaMarket;
+    return [market];
   }));
   const rows = responses.flat();
   const candidates = rows
