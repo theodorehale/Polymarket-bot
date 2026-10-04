@@ -48,17 +48,20 @@ function looksLikeBtcFiveMinute(m: GammaMarket): boolean {
 export async function discoverBtcFiveMinuteMarket(
   nowMs = Date.now(),
 ): Promise<DiscoveredFiveMinuteMarket> {
-  const url = new URL('https://gamma-api.polymarket.com/markets');
-  url.searchParams.set('active', 'true');
-  url.searchParams.set('closed', 'false');
-  url.searchParams.set('order', 'endDate');
-  url.searchParams.set('ascending', 'true');
-  url.searchParams.set('limit', '100');
-
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Gamma discovery failed: HTTP ${response.status}`);
-
-  const rows = await response.json() as GammaMarket[];
+  // BTC 5m slugs are deterministic: btc-updown-5m-<window-start-unix-seconds>.
+  // Querying the first 100 globally active markets is not exhaustive and can miss this series.
+  // Probe the current and adjacent 5-minute windows directly, then apply the same fail-closed validation.
+  const windowSec = 300;
+  const currentStartSec = Math.floor(nowMs / 1000 / windowSec) * windowSec;
+  const slugs = [-1, 0, 1, 2].map(offset => `btc-updown-5m-${currentStartSec + offset * windowSec}`);
+  const responses = await Promise.all(slugs.map(async slug => {
+    const url = new URL('https://gamma-api.polymarket.com/markets');
+    url.searchParams.set('slug', slug);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Gamma discovery failed for ${slug}: HTTP ${response.status}`);
+    return await response.json() as GammaMarket[];
+  }));
+  const rows = responses.flat();
   const candidates = rows
     .filter(m => m.active === true && m.closed === false && m.acceptingOrders !== false)
     .filter(looksLikeBtcFiveMinute)
