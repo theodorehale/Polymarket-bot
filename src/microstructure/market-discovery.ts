@@ -36,7 +36,7 @@ function looksLikeBtcFiveMinute(m: GammaMarket): boolean {
   const text = [m.question, m.slug].filter(Boolean).join(' ').toLowerCase();
   const btc = /\b(bitcoin|btc)\b/.test(text);
   const upDown = /\b(up|down)\b/.test(text);
-  const fiveMinute = /(5[- ]?min|5 minute|five minute)/.test(text);
+  const fiveMinute = /(5m\b|5[- ]?min\b|5 minute\b|five minute\b)/.test(text);
   return btc && upDown && fiveMinute;
 }
 
