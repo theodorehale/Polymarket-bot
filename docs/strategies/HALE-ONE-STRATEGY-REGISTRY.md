@@ -22,6 +22,8 @@
 | HO-STR-0012 | Volume farming / multi-account rewards exploitation | REJECTED | Platform/ToS and abuse risk; not an acceptable Hale One strategy | Do not reopen without explicit compliant legitimate use case |
 | HO-STR-0013 | Crypto perpetual funding-rate capture | WATCHLIST | Fee, basis, funding volatility, liquidation and capital constraints | Venue-permitted hedged OOS execution-cost and risk analysis |
 | HO-STR-0014 | Historical order-book replay via third-party provider | RESEARCH CANDIDATE | Data-source infrastructure, not itself a trading strategy; coverage/accuracy unverified | Raw sample, gaps, timestamp reconciliation and provider terms verified |
+| HO-STR-0015 | Conditional logical-implication contract baskets | RESEARCH CANDIDATE | Prior 2026-10-13 scan described 19 synthetic checks but raw execution and rule identity unverified; not yet independently replicated | Exact official implication proof plus time-synced multi-leg depth, latency and OOS net fills |
+| HO-STR-0016 | Legitimate sports-prop component maker incentive (Kalshi) | WATCHLIST | Official fee-funded pool pays monthly Bonus Credit subject to 0.01 score threshold, maker volume share and exclusions; no Hale One fills, credits or profitability verified | Independently reproduce eligible component/score/bonus and adverse-selection-adjusted maker OOS PnL |
 
 ## Required record for each new or revisited strategy
 - `strategy_id` and `family_id` (stable), `aliases`, `discovered_at`, `last_reviewed_at`, `status`, `rejection_class` (`FALSIFIED`, `BLOCKED/UNVERIFIABLE`, `LOW PRIORITY`, or `NOT_APPLICABLE`).
@@ -39,3 +41,11 @@
 
 ## Current caveat
 This is an initial index distilled from previous Hale One discussions, not a backfilled audit of original source data. Historical statuses may be revised after retrieving original test artifacts; do not invent test counts, profits or sources. No live trades, wallet signing or fund movements are authorized.
+
+## 2026-10-13 review note
+- HO-STR-0015 is a **previously discussed** candidate, backfilled under its existing ID rather than assigned a duplicate.
+- HO-STR-0016 is materially distinct from HO-STR-0004 because the official sports-prop combo fee-funded incentive changes the payoff, but maker adverse selection remains; distinct from rejected HO-STR-0012 because wash/self-match/prearranged volume is explicitly excluded and not permitted.
+- Primary source for HO-STR-0016: https://help.kalshi.com/en/articles/17184676-sports-prop-combo-market-component-legs-liquidity-incentive-program . Official example arithmetic checked, not realized earnings.
+- Liquidity benchmark (research input for HO-STR-0014 / HO-STR-0008): https://github.com/vcorp-dev/prediction-market-liquidity-benchmark . Only public summary internal arithmetic checked; underlying 34,560 rows and checksum have NOT been independently reverified. This is NOT an executable edge.
+- Replay framework (HO-STR-0014 research input): https://github.com/Oddpool/PredictionMarketBench . Historical fee schedule in example is October 2025, so fee models must be updated before use. Public episodes do not establish BTC 15m profitability.
+- Safety: no live orders, credentials, wallets, signatures or capital transfers.
