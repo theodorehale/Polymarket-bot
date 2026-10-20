@@ -68,12 +68,15 @@ export interface PaperExecutionAttempt {
   marketId: string;
   tokenId: string;
   signalReceivedAtMs: number;
+  signalMonotonicNs?: string;
   hypotheticalArrivalAtMs: number;
+  hypotheticalArrivalMonotonicNs?: string;
   configuredLatencyMs: number;
   side: 'BUY' | 'SELL';
   requestedSize: number;
   referencePrice: number;
   fillObservedAtMs?: number;
+  fillObservedMonotonicNs?: string;
   executablePrice?: number;
   executableSize?: number;
   estimatedFees?: number;
