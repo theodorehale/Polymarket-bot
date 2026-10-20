@@ -10,16 +10,16 @@ const signal={attemptId:'a',marketId:'m',tokenId:'t',signalReceivedAtMs:1000,sid
 
 describe('simulatePaperExecution',()=>{
  it('fills only using a book at/after configured arrival',()=>{
-   const r=simulatePaperExecution(signal,book(1100),{latencyMs:100,minNetEdge:0.001});
+   const r=simulatePaperExecution(signal,book(1100),{feeRate:0,latencyMs:100,minNetEdge:0.001});
    expect(r.status).toBe('PAPER_FILLED'); expect(r.executablePrice).toBe(0.51);
  });
  it('misses a book that existed before hypothetical arrival',()=>{
-   expect(simulatePaperExecution(signal,book(1050),{latencyMs:100}).status).toBe('PAPER_MISSED');
+   expect(simulatePaperExecution(signal,book(1050),{feeRate:0,latencyMs:100}).status).toBe('PAPER_MISSED');
  });
  it('rejects insufficient depth',()=>{
-   expect(simulatePaperExecution(signal,book(1100,[{price:0.51,size:2}]),{latencyMs:100}).status).toBe('REJECTED_NO_DEPTH');
+   expect(simulatePaperExecution(signal,book(1100,[{price:0.51,size:2}]),{feeRate:0,latencyMs:100}).status).toBe('REJECTED_NO_DEPTH');
  });
  it('rejects negative/insufficient net edge',()=>{
-   expect(simulatePaperExecution(signal,book(1100),{latencyMs:100,minNetEdge:0.05}).status).toBe('REJECTED_NO_EDGE');
+   expect(simulatePaperExecution(signal,book(1100),{feeRate:0,latencyMs:100,minNetEdge:0.05}).status).toBe('REJECTED_NO_EDGE');
  });
 });

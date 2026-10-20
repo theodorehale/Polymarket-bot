@@ -1,3 +1,4 @@
+import { evaluatePolymarketBookEvidence } from './evidence-gate.js';
 import { createHash } from 'node:crypto';
 import type {
   BinanceTradePayload,
@@ -20,6 +21,8 @@ type PendingShock = {
   direction: 1 | -1;
   baselinePolyMid?: number;
   marketId?: string;
+  tokenId?: string;
+  outcomeDirection?: number;
 };
 
 function mid(event: UnifiedMarketEvent<PolymarketBookPayload>): number | undefined {
@@ -42,7 +45,7 @@ function idFor(ts: number, direction: number, price: number): string {
 export class LeadLagDetector {
   private readonly cfg: Required<LeadLagDetectorConfig>;
   private spot: SpotPoint[] = [];
-  private lastPolyMid?: number;
+  private lastPolyMid = new Map<string, {mid:number; marketId:string; tokenId:string; direction:number; ts:number}>();
   private pending: PendingShock[] = [];
   private cooldownUntilMs = 0;
 
@@ -69,12 +72,11 @@ export class LeadLagDetector {
     if (Math.abs(moveBps) < this.cfg.minAbsoluteMoveBps) return;
 
     const direction: 1 | -1 = moveBps > 0 ? 1 : -1;
-    this.pending.push({
-      id: idFor(ts, direction, price),
-      t0: ts,
-      direction,
-      baselinePolyMid: this.lastPolyMid,
-    });
+    for (const b of this.lastPolyMid.values()) {
+      if (ts - b.ts > this.cfg.maxReactionMs || b.ts > ts) continue;
+      this.pending.push({id:idFor(ts,direction,price)+'-'+b.tokenId, t0:ts, direction,
+        baselinePolyMid:b.mid,marketId:b.marketId,tokenId:b.tokenId,outcomeDirection:b.direction});
+    }
     this.cooldownUntilMs = ts + this.cfg.shockWindowMs;
   }
 
@@ -82,11 +84,14 @@ export class LeadLagDetector {
     event: UnifiedMarketEvent<PolymarketBookPayload>,
   ): LeadLagObservation[] {
     const ts = event.clock.receivedAtMs;
+    if (!event.marketId || !event.tokenId || !['UP','DOWN'].includes(event.payload.side ?? '') || !evaluatePolymarketBookEvidence(event,ts).accepted) return [];
     const currentMid = mid(event);
     if (currentMid === undefined) return [];
 
-    const previousMid = this.lastPolyMid;
-    this.lastPolyMid = currentMid;
+    const key = event.marketId+'|'+event.tokenId;
+    const prior = this.lastPolyMid.get(key);
+    if (prior && prior.ts > ts) return [];
+    this.lastPolyMid.set(key,{mid:currentMid,marketId:event.marketId!,tokenId:event.tokenId!,direction:event.payload.side==='UP'?1:-1,ts});
 
     const completed: LeadLagObservation[] = [];
     const stillPending: PendingShock[] = [];
@@ -98,13 +103,14 @@ export class LeadLagDetector {
       }
       if (ts - shock.t0 > this.cfg.maxReactionMs) continue;
 
-      const baseline = shock.baselinePolyMid ?? previousMid;
+      if (shock.marketId !== event.marketId || shock.tokenId !== event.tokenId) { stillPending.push(shock); continue; }
+      const baseline = shock.baselinePolyMid;
       if (baseline === undefined) {
         stillPending.push(shock);
         continue;
       }
 
-      const delta = currentMid - baseline;
+      const delta = (currentMid - baseline) * (shock.outcomeDirection ?? 0);
       const reacted =
         shock.direction > 0
           ? delta >= this.cfg.minPolyMidMove

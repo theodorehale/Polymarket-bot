@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - experiment/5m-microstructure-paper-v0.1
+      - fix/hale-5m-evidence-20261020
   pull_request:
     branches:
       - main
+      - experiment/5m-microstructure-paper-v0.1
   workflow_dispatch:
 
 permissions:
@@ -22,7 +24,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - name: Install dependencies
         run: npm ci
@@ -30,3 +32,8 @@ jobs:
         run: npm run build
       - name: Microstructure tests
         run: npx vitest run src/microstructure
+
+      - name: Reproduce committed real-data diagnostic
+        run: |
+          npm run microstructure:replay
+          git diff --exit-code -- data/microstructure/takeover-2026-10-20/paper-report.json

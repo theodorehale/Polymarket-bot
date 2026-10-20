@@ -73,6 +73,7 @@ export interface PaperExecutionAttempt {
   side: 'BUY' | 'SELL';
   requestedSize: number;
   referencePrice: number;
+  fillObservedAtMs?: number;
   executablePrice?: number;
   executableSize?: number;
   estimatedFees?: number;

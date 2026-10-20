@@ -20,6 +20,7 @@ export function runLatencySweep(
   books: UnifiedMarketEvent<PolymarketBookPayload>[],
   config: LatencySweepConfig = {},
 ): PaperExecutionAttempt[] {
+  if (candidate.observation.t2PolyRepriceStartMs !== undefined) throw new Error('LOOKAHEAD_COMPLETED_OBSERVATION_IS_NOT_A_SIGNAL');
   const latencies = config.latenciesMs ?? [50, 100, 200, 500];
   const requestedSize = config.requestedSize ?? 10;
   const attempts: PaperExecutionAttempt[] = [];
@@ -27,7 +28,7 @@ export function runLatencySweep(
   for (const latencyMs of latencies) {
     const arrival = candidate.observation.t0SpotShockMs + latencyMs;
     const book = books
-      .filter(b => b.tokenId === candidate.tokenId && b.clock.receivedAtMs >= arrival)
+      .filter(b => b.marketId === candidate.observation.marketId && b.tokenId === candidate.tokenId && b.clock.receivedAtMs >= arrival)
       .sort((a,b) => a.clock.receivedAtMs - b.clock.receivedAtMs)[0];
 
     if (!book) {
@@ -58,7 +59,7 @@ export function runLatencySweep(
       fairPrice:candidate.fairPrice,
     }, book, {
       latencyMs,
-      feeRate:config.feeRate ?? 0,
+      feeRate:config.feeRate,
       minNetEdge:config.minNetEdge ?? 0,
     }));
   }

@@ -1,3 +1,4 @@
+import { evaluatePolymarketBookEvidence } from './evidence-gate.js';
 import type { PaperExecutionAttempt, PolymarketBookPayload, UnifiedMarketEvent } from './types.js';
 
 export interface PaperExecutionConfig {
@@ -5,6 +6,7 @@ export interface PaperExecutionConfig {
   feeRate?: number;
   minNetEdge?: number;
   maxBookAgeMs?: number;
+  maxArrivalDelayMs?: number;
 }
 
 export interface PaperSignal {
@@ -45,11 +47,19 @@ export function simulatePaperExecution(
 ): PaperExecutionAttempt {
   const cfg: Required<PaperExecutionConfig> = {
     latencyMs: config.latencyMs,
-    feeRate: config.feeRate ?? 0,
+    feeRate: config.feeRate ?? NaN,
     minNetEdge: config.minNetEdge ?? 0,
     maxBookAgeMs: config.maxBookAgeMs ?? 1_000,
+    maxArrivalDelayMs: config.maxArrivalDelayMs ?? 100,
   };
   const arrival = signal.signalReceivedAtMs + cfg.latencyMs;
+  if (![signal.signalReceivedAtMs, signal.requestedSize, signal.fairPrice, arrival, cfg.latencyMs, cfg.feeRate, cfg.minNetEdge, cfg.maxBookAgeMs, cfg.maxArrivalDelayMs].every(Number.isFinite) ||
+      signal.requestedSize <= 0 || signal.fairPrice <= 0 || signal.fairPrice >= 1 || cfg.latencyMs < 0 || cfg.feeRate < 0 || cfg.feeRate > 1 || cfg.maxBookAgeMs < 0 || cfg.maxArrivalDelayMs < 0 ||
+      !['BUY','SELL'].includes(signal.side)) return reject(signal, cfg, 'REJECTED_NO_EDGE', 'INVALID_SIGNAL_OR_MISSING_FEE');
+  if (!signal.marketId || !signal.tokenId || book.marketId !== signal.marketId || book.tokenId !== signal.tokenId) return reject(signal, cfg, 'REJECTED_STALE_BOOK', 'BOOK_IDENTITY_MISMATCH');
+  const evidence = evaluatePolymarketBookEvidence(book, book.clock?.receivedAtMs, { maxAgeMs: cfg.maxBookAgeMs });
+  if (!evidence.accepted) return reject(signal, cfg, 'REJECTED_STALE_BOOK', evidence.reason);
+  if (book.clock.receivedAtMs > arrival + cfg.maxArrivalDelayMs) return reject(signal, cfg, 'PAPER_MISSED', 'BOOK_TOO_LATE_AFTER_ARRIVAL');
   if (book.clock.receivedAtMs < arrival) return reject(signal, cfg, 'PAPER_MISSED', 'BOOK_PRECEDES_HYPOTHETICAL_ARRIVAL');
   const sourceTs = book.clock.sourceTimestampMs;
   if (sourceTs === undefined || arrival - sourceTs > cfg.maxBookAgeMs) return reject(signal, cfg, 'REJECTED_STALE_BOOK', 'BOOK_STALE_AT_HYPOTHETICAL_ARRIVAL');
@@ -71,6 +81,7 @@ export function simulatePaperExecution(
   const grossEdge = signal.side === 'BUY'
     ? signal.fairPrice - executablePrice
     : executablePrice - signal.fairPrice;
+  // Explicit linear cost scenario only; verified market cashflow uses fees-and-pnl.ts.
   const estimatedFees = executablePrice * filled * cfg.feeRate;
   const feePerUnit = estimatedFees / filled;
   const netEdge = grossEdge - feePerUnit;
@@ -85,6 +96,7 @@ export function simulatePaperExecution(
 
   return {
     ...reject(signal, cfg, 'PAPER_FILLED', 'PAPER_FILL_AT_OR_AFTER_CONFIGURED_ARRIVAL'),
+    fillObservedAtMs: book.clock.receivedAtMs,
     executablePrice, executableSize: filled, estimatedFees,
     estimatedSlippage: Math.abs(executablePrice - levels[0].price),
     grossEdge, netEdge,

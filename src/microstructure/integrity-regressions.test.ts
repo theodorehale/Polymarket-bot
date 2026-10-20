@@ -1,0 +1,21 @@
+import {describe,it,expect} from 'vitest';
+import {simulatePaperExecution} from './paper-execution-simulator.js';
+import {evaluatePolymarketBookEvidence} from './evidence-gate.js';
+import {runLatencySweep} from './paper-latency-sweep.js';
+import {computeMarkouts} from './markout.js';
+import {LeadLagDetector} from './lead-lag-detector.js';
+import type {UnifiedMarketEvent,PolymarketBookPayload,BinanceTradePayload} from './types.js';
+const book=(ts=1100):UnifiedMarketEvent<PolymarketBookPayload>=>({schemaVersion:'hale-5m-event-v0.1',source:'polymarket',kind:'book_snapshot',instrument:'m',marketId:'m',tokenId:'t',clock:{sourceTimestampMs:ts,receivedAtMs:ts,monotonicReceivedNs:String(ts)},payload:{side:'UP',bids:[{price:.48,size:10}],asks:[{price:.52,size:10}]}});
+const s={attemptId:'a',marketId:'m',tokenId:'t',signalReceivedAtMs:1000,side:'BUY' as const,requestedSize:1,fairPrice:.6};
+const cfg={latencyMs:100,feeRate:.01};
+describe('audit regressions',()=>{
+ it.each([NaN,Infinity,-1,0,1])('rejects invalid fair price %s',fairPrice=>expect(simulatePaperExecution({...s,fairPrice},book(),cfg).status).not.toBe('PAPER_FILLED'));
+ it('rejects wrong identity',()=>expect(simulatePaperExecution(s,{...book(),tokenId:'other'},cfg).reason).toBe('BOOK_IDENTITY_MISMATCH'));
+ it('rejects far future liquidity',()=>expect(simulatePaperExecution(s,book(1000000),cfg).reason).toBe('BOOK_TOO_LATE_AFTER_ARRIVAL'));
+ it('requires explicit fees',()=>expect(simulatePaperExecution(s,book(),{latencyMs:100}).reason).toBe('INVALID_SIGNAL_OR_MISSING_FEE'));
+ it('rejects old source freshly received',()=>{const b=book();b.clock.sourceTimestampMs=1;expect(evaluatePolymarketBookEvidence(b,1100).accepted).toBe(false);});
+ it('rejects placeholder book at execution boundary',()=>{const b=book();b.payload={bids:[{price:.49,size:100}],asks:[{price:.51,size:100}]};expect(simulatePaperExecution(s,b,cfg).reason).toBe('LEGACY_INITIAL_BOOK_PLACEHOLDER');});
+ it('rejects backdating completed reaction into a signal',()=>expect(()=>runLatencySweep({observation:{schemaVersion:'hale-5m-leadlag-v0.1',observationId:'o',marketId:'m',spotInstrument:'BTCUSDT',t0SpotShockMs:1000,t2PolyRepriceStartMs:1200},tokenId:'t',direction:'UP',fairPrice:.6},[book()],{feeRate:0})).toThrow('LOOKAHEAD'));
+ it('missing horizon stays missing',()=>{const a=simulatePaperExecution(s,book(),cfg);expect(computeMarkouts(a,[book(1000000)],[100])[0].status).toBe('MISSING');});
+ it('does not confuse token changes with repricing',()=>{const detector=new LeadLagDetector();detector.onPolymarket(book(900));const trade=(ts:number,price:number):UnifiedMarketEvent<BinanceTradePayload>=>({schemaVersion:'hale-5m-event-v0.1',source:'binance',kind:'trade',instrument:'BTCUSDT',clock:{sourceTimestampMs:ts,receivedAtMs:ts,monotonicReceivedNs:String(ts)},payload:{symbol:'BTCUSDT',tradeId:ts,price,quantity:1,buyerIsMaker:false}});detector.onBinance(trade(1000,100000));detector.onBinance(trade(1100,100030));const down=book(1180);down.tokenId='down';down.payload={side:'DOWN',bids:[{price:.7,size:10}],asks:[{price:.72,size:10}]};expect(detector.onPolymarket(down)).toHaveLength(0);});
+});

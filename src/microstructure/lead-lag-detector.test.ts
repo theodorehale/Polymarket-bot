@@ -16,8 +16,9 @@ function book(ts: number, mid: number): UnifiedMarketEvent<PolymarketBookPayload
     instrument: 'm1', marketId: 'm1', tokenId: 't1',
     clock: { sourceTimestampMs: ts, receivedAtMs: ts, monotonicReceivedNs: String(ts) },
     payload: {
-      bids: [{ price: mid - 0.01, size: 100 }],
-      asks: [{ price: mid + 0.01, size: 100 }],
+      side: 'UP',
+      bids: [{ price: mid - 0.01, size: 90 }],
+      asks: [{ price: mid + 0.01, size: 90 }],
     },
   };
 }
