@@ -37,8 +37,11 @@ export function runLatencySweep(
   if (candidate.observation.t2PolyRepriceStartMs !== undefined) {
     throw new Error('LOOKAHEAD_COMPLETED_OBSERVATION_IS_NOT_A_SIGNAL');
   }
-  const signalMono = parseMonotonicNs(candidate.observation.t0SpotShockMonotonicNs);
-  if (signalMono === undefined) throw new Error('MISSING_MONOTONIC_SIGNAL_CLOCK');
+  const signalMonotonicNs = signalMonotonicNs;
+  const signalMono = parseMonotonicNs(signalMonotonicNs);
+  if (signalMono === undefined || signalMonotonicNs === undefined) {
+    throw new Error('MISSING_MONOTONIC_SIGNAL_CLOCK');
+  }
 
   const latencies = config.latenciesMs ?? [50, 100, 200, 500];
   const requestedSize = config.requestedSize ?? 10;
@@ -68,7 +71,7 @@ export function runLatencySweep(
         marketId: candidate.observation.marketId,
         tokenId: candidate.tokenId,
         signalReceivedAtMs: candidate.observation.t0SpotShockMs,
-        signalMonotonicNs: candidate.observation.t0SpotShockMonotonicNs,
+        signalMonotonicNs: signalMonotonicNs,
         hypotheticalArrivalAtMs: candidate.observation.t0SpotShockMs + latencyMs,
         hypotheticalArrivalMonotonicNs: arrivalMono.toString(),
         configuredLatencyMs: latencyMs,
@@ -86,7 +89,7 @@ export function runLatencySweep(
       marketId: candidate.observation.marketId,
       tokenId: candidate.tokenId,
       signalReceivedAtMs: candidate.observation.t0SpotShockMs,
-      signalMonotonicNs: candidate.observation.t0SpotShockMonotonicNs,
+      signalMonotonicNs: signalMonotonicNs,
       side: 'BUY',
       requestedSize,
       fairPrice: candidate.fairPrice,
