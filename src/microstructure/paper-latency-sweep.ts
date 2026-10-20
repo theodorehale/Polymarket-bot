@@ -37,7 +37,7 @@ export function runLatencySweep(
   if (candidate.observation.t2PolyRepriceStartMs !== undefined) {
     throw new Error('LOOKAHEAD_COMPLETED_OBSERVATION_IS_NOT_A_SIGNAL');
   }
-  const signalMonotonicNs = signalMonotonicNs;
+  const signalMonotonicNs = candidate.observation.t0SpotShockMonotonicNs;
   const signalMono = parseMonotonicNs(signalMonotonicNs);
   if (signalMono === undefined || signalMonotonicNs === undefined) {
     throw new Error('MISSING_MONOTONIC_SIGNAL_CLOCK');
