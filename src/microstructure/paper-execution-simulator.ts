@@ -41,7 +41,10 @@ function reject(
   reason: string,
 ): PaperExecutionAttempt {
   const signalMono = parseMonotonicNs(signal.signalMonotonicNs);
-  const arrivalMono = signalMono === undefined ? undefined : signalMono + durationNs(cfg.latencyMs);
+  const arrivalMono =
+    signalMono === undefined || !Number.isFinite(cfg.latencyMs) || cfg.latencyMs < 0
+      ? undefined
+      : signalMono + durationNs(cfg.latencyMs);
   return {
     schemaVersion: 'hale-5m-paper-attempt-v0.1',
     attemptId: signal.attemptId,
@@ -91,25 +94,27 @@ export function simulatePaperExecution(
       signal.requestedSize,
       signal.fairPrice,
       cfg.latencyMs,
-      cfg.feeRate,
       cfg.minNetEdge,
       cfg.maxBookAgeMs,
       cfg.maxArrivalDelayMs,
     ].every(Number.isFinite) ||
-    signalMono === undefined ||
-    bookMono === undefined ||
-    arrivalMono === undefined ||
     signal.requestedSize <= 0 ||
     signal.fairPrice <= 0 ||
     signal.fairPrice >= 1 ||
     cfg.latencyMs < 0 ||
-    cfg.feeRate < 0 ||
-    cfg.feeRate > 1 ||
     cfg.maxBookAgeMs < 0 ||
     cfg.maxArrivalDelayMs < 0 ||
     !['BUY', 'SELL'].includes(signal.side)
   ) {
-    return reject(signal, cfg, 'REJECTED_NO_EDGE', 'INVALID_SIGNAL_OR_MISSING_FEE_OR_MONOTONIC_CLOCK');
+    return reject(signal, cfg, 'REJECTED_NO_EDGE', 'INVALID_SIGNAL_OR_CLOCK_POLICY');
+  }
+
+  if (!Number.isFinite(cfg.feeRate) || cfg.feeRate < 0 || cfg.feeRate > 1) {
+    return reject(signal, cfg, 'REJECTED_NO_EDGE', 'INVALID_SIGNAL_OR_MISSING_FEE');
+  }
+
+  if (signalMono === undefined || bookMono === undefined || arrivalMono === undefined) {
+    return reject(signal, cfg, 'REJECTED_NO_EDGE', 'MISSING_OR_INVALID_MONOTONIC_CLOCK');
   }
 
   if (
