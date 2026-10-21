@@ -50,6 +50,15 @@ jobs:
             echo '{"decision":"DATA_UNAVAILABLE","reason":"NO_CAPTURE_SUMMARY"}'
           fi
 
+      - name: Verify deterministic delta reconstruction
+        id: reconstruction
+        if: always()
+        continue-on-error: true
+        run: |
+          npm run microstructure:paired:reconstruct -- \
+            data/microstructure/coinbase-paired-ci/paired-raw.jsonl \
+            data/microstructure/coinbase-paired-ci/paired-reconstruction-report.json
+
       - name: Preserve paired evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,4 +87,18 @@ jobs:
           if (!(summary.coinbase?.validEvents > 0)) throw new Error('NO_COINBASE_TICKER_EVENTS');
           if (!(summary.polymarket?.validEvents > 0)) throw new Error('NO_POLYMARKET_BOOK_EVENTS');
           if (!/^[a-f0-9]{64}$/.test(summary.evidence?.rawSha256 ?? '')) throw new Error('MISSING_RAW_SHA256');
+          const reconstructionPath = 'data/microstructure/coinbase-paired-ci/paired-reconstruction-report.json';
+          const reconstruction = JSON.parse(fs.readFileSync(reconstructionPath, 'utf8'));
+          console.log(JSON.stringify({
+            reconstructionDecision: reconstruction.decision,
+            priceChangeRows: reconstruction.polymarketPriceChangeRows,
+            bboChecks: reconstruction.bboChecks,
+            bboMismatches: reconstruction.bboMismatches,
+          }));
+          if (reconstruction.decision !== 'DELTA_RECONSTRUCTION_VERIFIED') {
+            throw new Error('DELTA_RECONSTRUCTION_NOT_VERIFIED');
+          }
+          if (reconstruction.bboChecks !== reconstruction.polymarketPriceChangeRows) {
+            throw new Error('INCOMPLETE_DELTA_RECONSTRUCTION_COVERAGE');
+          }
           NODE
