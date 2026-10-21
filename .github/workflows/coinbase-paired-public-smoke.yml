@@ -1,0 +1,81 @@
+name: Coinbase Paired Public Data Smoke
+
+on:
+  push:
+    branches:
+      - experiment/coinbase-5m-paired-paper-v0.1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Capture paired public evidence
+        shell: bash
+        run: |
+          set +e
+          HALE_5M_DURATION_MS=20000 \
+          HALE_5M_CAPTURE_DIR=data/microstructure/coinbase-paired-ci \
+          npm run microstructure:collect:coinbase-paired | tee /tmp/coinbase-paired.log
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "HALE_CAPTURE_EXIT_CODE=$code" >> "$GITHUB_ENV"
+
+      - name: Classify capture
+        if: always()
+        shell: bash
+        run: |
+          if [ -s data/microstructure/coinbase-paired-ci/paired-capture-summary.json ]; then
+            cat data/microstructure/coinbase-paired-ci/paired-capture-summary.json
+          else
+            echo '{"decision":"DATA_UNAVAILABLE","reason":"NO_CAPTURE_SUMMARY"}'
+          fi
+
+      - name: Preserve paired evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coinbase-polymarket-paired-public-evidence
+          path: data/microstructure/coinbase-paired-ci/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Require both public feeds
+        shell: bash
+        run: |
+          test "${HALE_CAPTURE_EXIT_CODE:-99}" -eq 0
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'data/microstructure/coinbase-paired-ci/paired-capture-summary.json';
+          const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+          console.log(JSON.stringify({
+            decision: summary.decision,
+            strategyIdentity: summary.strategyIdentity,
+            coinbaseTickerEvents: summary.coinbase?.validEvents,
+            polymarketBookEvents: summary.polymarket?.validEvents,
+            rawSha256: summary.evidence?.rawSha256,
+          }));
+          if (summary.decision !== 'PAIRED_PUBLIC_DATA_CAPTURED') throw new Error('PAIRED_PUBLIC_DATA_NOT_CAPTURED');
+          if (!(summary.coinbase?.validEvents > 0)) throw new Error('NO_COINBASE_TICKER_EVENTS');
+          if (!(summary.polymarket?.validEvents > 0)) throw new Error('NO_POLYMARKET_BOOK_EVENTS');
+          if (!/^[a-f0-9]{64}$/.test(summary.evidence?.rawSha256 ?? '')) throw new Error('MISSING_RAW_SHA256');
+          NODE
