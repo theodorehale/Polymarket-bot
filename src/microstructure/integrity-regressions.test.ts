@@ -14,6 +14,7 @@ describe('audit regressions',()=>{
  it('rejects wrong identity',()=>expect(simulatePaperExecution(s,{...book(),tokenId:'other'},cfg).reason).toBe('BOOK_IDENTITY_MISMATCH'));
  it('rejects far future liquidity',()=>expect(simulatePaperExecution(s,book(1000000),cfg).reason).toBe('BOOK_TOO_LATE_AFTER_ARRIVAL'));
  it('requires explicit fees',()=>expect(simulatePaperExecution(s,book(),{latencyMs:100}).reason).toBe('INVALID_SIGNAL_OR_MISSING_FEE'));
+ it('requires a monotonic execution clock',()=>expect(simulatePaperExecution({...s,signalMonotonicNs:''},book(),cfg).reason).toBe('MISSING_OR_INVALID_MONOTONIC_CLOCK'));
  it('rejects old source freshly received',()=>{const b=book();b.clock.sourceTimestampMs=1;expect(evaluatePolymarketBookEvidence(b,1100).accepted).toBe(false);});
  it('rejects placeholder book at execution boundary',()=>{const b=book();b.payload={bids:[{price:.49,size:100}],asks:[{price:.51,size:100}]};expect(simulatePaperExecution(s,b,cfg).reason).toBe('LEGACY_INITIAL_BOOK_PLACEHOLDER');});
  it('rejects backdating completed reaction into a signal',()=>expect(()=>runLatencySweep({observation:{schemaVersion:'hale-5m-leadlag-v0.1',observationId:'o',marketId:'m',spotInstrument:'BTCUSDT',t0SpotShockMs:1000,t0SpotShockMonotonicNs:monoNs(1000),t2PolyRepriceStartMs:1200},tokenId:'t',direction:'UP',fairPrice:.6},[book()],{feeRate:0})).toThrow('LOOKAHEAD'));
