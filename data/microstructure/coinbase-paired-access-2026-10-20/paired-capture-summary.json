@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "hale-paired-capture-v0.1",
+  "strategyIdentity": "COINBASE_BTCUSD_TO_POLYMARKET_BTC_5M",
+  "decision": "PAIRED_PUBLIC_DATA_CAPTURED",
+  "trigger": "BOUNDED_DURATION_COMPLETE",
+  "startedAt": "2026-10-21T00:04:28.492Z",
+  "endedAt": "2026-10-21T00:04:48.751Z",
+  "workflowRunId": 39519012676,
+  "artifactId": 12310945580,
+  "market": {
+    "id": "5951474",
+    "conditionId": "0x965f777a60e15455d7317111157ccbad1184210b485ab10c1ff4a472aca4602a",
+    "slug": "btc-updown-5m-1792540800",
+    "question": "Bitcoin Up or Down - October 20, 8:00PM-8:05PM ET",
+    "endDate": "2026-10-21T00:05:00Z",
+    "outcomeMap": [
+      {
+        "tokenId": "87018845507907826720464505527783745678003629125161454461676734199432827123615",
+        "outcome": "Up"
+      },
+      {
+        "tokenId": "72606000877357661640761473780257064129646632940222659362573232336163155799175",
+        "outcome": "Down"
+      }
+    ]
+  },
+  "coinbase": {
+    "endpoint": "wss://ws-feed.exchange.coinbase.com",
+    "messages": 118,
+    "validTickerEvents": 97,
+    "invalidEvents": 0,
+    "messageTypes": {
+      "subscriptions": 1,
+      "ticker": 97,
+      "heartbeat": 20
+    }
+  },
+  "polymarket": {
+    "endpoint": "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+    "messages": 855,
+    "validFullBookEvents": 2,
+    "invalidEvents": 0,
+    "messageTypes": {
+      "book": 2,
+      "price_change": 853
+    }
+  },
+  "evidence": {
+    "rawBytes": 797933,
+    "gzipBytes": 66986,
+    "rawSha256": "aa490791cf957a15d6d77c2fa4acd30fc434801c3b60e9fc89cf0fe1f6e499e3",
+    "gzipSha256": "f5e1ea8225aa9b04c6ac32c0ac1d49810704e3560fcfcc451adedbf6d15051ba",
+    "workflowArtifactDigest": "sha256:943e077b91fe71d4270242e22a25c3f5ea0ca9134ca7e695ba32f157c288afd7"
+  },
+  "safety": {
+    "mode": "READ_ONLY_PUBLIC_DATA",
+    "credentialsUsed": false,
+    "walletUsed": false,
+    "ordersSubmitted": false,
+    "proxyOrVpnUsed": false,
+    "fallbackEndpointUsed": false
+  },
+  "interpretation": "ACCESS_PROOF_ONLY_NOT_STRATEGY_PERFORMANCE"
+}

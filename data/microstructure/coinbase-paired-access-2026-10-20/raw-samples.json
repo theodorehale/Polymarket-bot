@@ -1,0 +1,77 @@
+{
+  "coinbaseTicker": {
+    "envelope": {
+      "stream": "coinbase",
+      "endpoint": "wss://ws-feed.exchange.coinbase.com",
+      "receivedAtMs": 1792541068831,
+      "monotonicReceivedNs": "107122758528"
+    },
+    "message": {
+      "type": "ticker",
+      "sequence": 138060627904,
+      "product_id": "BTC-USD",
+      "price": "82875.9",
+      "best_bid": "82875.90",
+      "best_ask": "82875.91",
+      "side": "sell",
+      "time": "2026-10-21T00:04:28.791758Z",
+      "trade_id": 1108603806,
+      "last_size": "0.00000003"
+    }
+  },
+  "polymarketBookHeader": {
+    "envelope": {
+      "stream": "polymarket",
+      "endpoint": "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+      "receivedAtMs": 1792541069185,
+      "monotonicReceivedNs": "107476358903"
+    },
+    "message": {
+      "market": "0x965f777a60e15455d7317111157ccbad1184210b485ab10c1ff4a472aca4602a",
+      "asset_id": "87018845507907826720464505527783745678003629125161454461676734199432827123615",
+      "timestamp": "1792541069114",
+      "hash": "dfd6b574ecf3a4f792f351faa07f4afc9a3a6113",
+      "tick_size": "0.001",
+      "event_type": "book",
+      "last_trade_price": "0.999",
+      "bidLevels": 0,
+      "askLevels": 123,
+      "firstAsk": {
+        "price": "0.999",
+        "size": "15"
+      }
+    }
+  },
+  "polymarketPriceChange": {
+    "envelope": {
+      "stream": "polymarket",
+      "endpoint": "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+      "receivedAtMs": 1792541069189,
+      "monotonicReceivedNs": "107480798212"
+    },
+    "message": {
+      "market": "0x965f777a60e15455d7317111157ccbad1184210b485ab10c1ff4a472aca4602a",
+      "timestamp": "1792541069147",
+      "event_type": "price_change",
+      "changes": [
+        {
+          "asset_id": "72606000877357661640761473780257064129646632940222659362573232336163155799175",
+          "price": "0.62",
+          "size": "68",
+          "side": "BUY",
+          "best_bid": "0.999",
+          "best_ask": "1"
+        },
+        {
+          "asset_id": "87018845507907826720464505527783745678003629125161454461676734199432827123615",
+          "price": "0.38",
+          "size": "68",
+          "side": "SELL",
+          "best_bid": "0",
+          "best_ask": "0.001"
+        }
+      ]
+    }
+  },
+  "note": "Samples are verbatim field subsets from the hashed raw artifact; full raw evidence is the workflow artifact referenced by paired-capture-summary.json."
+}

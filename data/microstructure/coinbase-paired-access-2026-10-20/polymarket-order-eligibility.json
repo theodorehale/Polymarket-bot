@@ -1,0 +1,12 @@
+{
+  "endpoint": "https://polymarket.com/api/geoblock",
+  "recordedAt": "2026-10-21T00:04:28.731Z",
+  "httpStatus": 200,
+  "purpose": "ORDER_ELIGIBILITY_ONLY_NO_TRADING",
+  "response": {
+    "blocked": true,
+    "country": "US",
+    "region": "VA"
+  },
+  "note": "IP omitted from committed copy; original workflow artifact contains the raw response. blocked=true is treated only as order-eligibility evidence, not a public-data access restriction."
+}

@@ -37,7 +37,9 @@
     "microstructure:collect": "node scripts/microstructure/collect-public-books.mjs",
     "microstructure:report": "tsx src/microstructure/lead-lag-report.ts",
     "microstructure:validate": "npm run build && npm test -- --run src/microstructure",
-    "microstructure:replay": "tsx src/microstructure/capture-report.ts"
+    "microstructure:replay": "tsx src/microstructure/capture-report.ts",
+    "microstructure:collect:coinbase-paired": "tsx src/microstructure/coinbase-paired-capture.ts",
+    "microstructure:paired:reconstruct": "tsx src/microstructure/paired-capture-report.ts"
   },
   "keywords": [
     "polymarket",
