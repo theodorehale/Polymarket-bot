@@ -48,6 +48,10 @@ export function evaluatePolymarketBookEvidence(
   const maxAgeMs = config.maxAgeMs ?? 1_000;
   const futureToleranceMs = config.futureToleranceMs ?? 250;
 
+  if (![nowMs, maxAgeMs, futureToleranceMs].every(Number.isFinite) || maxAgeMs < 0 || futureToleranceMs < 0) {
+    return { accepted: false, status: 'INVALID', reason: 'INVALID_CLOCK_POLICY' };
+  }
+  if (!event?.clock || !event?.payload) return { accepted: false, status: 'INVALID', reason: 'MISSING_EVENT_FIELDS' };
   if (event.source !== 'polymarket' || event.kind !== 'book_snapshot') {
     return { accepted: false, status: 'INVALID', reason: 'NOT_POLYMARKET_BOOK_SNAPSHOT' };
   }
@@ -61,6 +65,8 @@ export function evaluatePolymarketBookEvidence(
     return { accepted: false, status: 'INVALID', reason: 'INVALID_RECEIVE_TIMESTAMP' };
   }
 
+  if (event.clock.receivedAtMs > nowMs + futureToleranceMs) return { accepted: false, status: 'INVALID', reason: 'RECEIVE_TIMESTAMP_IN_FUTURE' };
+  if (nowMs - sourceTs > maxAgeMs) return { accepted: false, status: 'STALE', reason: 'SOURCE_TIMESTAMP_STALE' };
   if (sourceTs > nowMs + futureToleranceMs) {
     return { accepted: false, status: 'INVALID', reason: 'SOURCE_TIMESTAMP_IN_FUTURE' };
   }

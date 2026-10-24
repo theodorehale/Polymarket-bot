@@ -1,0 +1,9 @@
+{
+  "startedAt": "2026-10-20T23:06:08.925Z",
+  "endedAt": "2026-10-20T23:06:38.999Z",
+  "endpoint": "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+  "marketId": "0xc496182273996af074b3607511570fc6a27ba7e7fa4d152035f87a9317fba19c",
+  "messages": 20602,
+  "books": 236,
+  "decision": "PUBLIC_BOOKS_CAPTURED"
+}

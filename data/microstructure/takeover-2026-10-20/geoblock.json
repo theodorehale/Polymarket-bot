@@ -1,0 +1,9 @@
+{
+  "recordedAt": "2026-10-20T23:00:44.781Z",
+  "endpoint": "https://polymarket.com/api/geoblock",
+  "httpStatus": 200,
+  "blocked": true,
+  "country": "US",
+  "region": "DE",
+  "purpose": "ORDER_ELIGIBILITY_CHECK_NO_TRADING"
+}
