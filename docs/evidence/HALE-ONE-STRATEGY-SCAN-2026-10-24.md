@@ -1,0 +1,30 @@
+# Hale One daily evidence record — 2026-10-24
+
+**Verdict:** No new strategy ID, no READY promotion, no real-trading authorization. Evidence first. This dated note does not replace historical registry entries.
+
+## Registry baseline and engineering status
+- Main registry [HALE-ONE-STRATEGY-REGISTRY.md](https://github.com/theodorehale/Polymarket-bot/blob/main/docs/strategies/HALE-ONE-STRATEGY-REGISTRY.md) has 18 permanent IDs, including rejected strategies; blob SHA `98fb52ffcd9a7ccf009654c158fd2375e049f2b7`. Do not duplicate IDs.
+- Branch HEAD `40b85417fca67ca8aa1d6f92120f04b58a98d34b` (2026-10-23) was a sprint documentation commit, not a Paper engine fix.
+- [PR #3](https://github.com/theodorehale/Polymarket-bot/pull/3) and [PR #4](https://github.com/theodorehale/Polymarket-bot/pull/4) still OPEN. [PR #4 paired-feed CI](https://github.com/theodorehale/Polymarket-bot/actions/runs/39519463864) failed: 58/23,308 immediate BBO mismatches, `DELTA_RECONSTRUCTION_NOT_VERIFIED`.
+- [Microstructure Validation](https://github.com/theodorehale/Polymarket-bot/actions/runs/39965262343) passed 18 Vitest tests in six files, but separate [Real Feed Smoke](https://github.com/theodorehale/Polymarket-bot/actions/runs/39965262313) failed HTTP 451. Green unit CI does not establish real-feed readiness.
+
+## Independently rerun on 2026-10-24 (read-only)
+Reran previously delivered Python forensic scripts against the original GitHub Actions artifact, **not newly collected market data**. Eight synthetic regression tests passed. Original JSONL: 11,065,814 bytes; SHA256 `e3e97313ce8e0624a3c1cda522e441d9de6a9bf5362f2e7ae206ed887fb5b2d8` matches original manifest. 12,106 raw rows, 82 Coinbase ticker messages, 234 Polymarket book snapshots, 11,654 change frames, 23,308 individual changes. Immediate mismatches: 58. Group-final source-timestamp BBO checks: **14,468/14,468 matched**; zero timestamp regressions. **Same-timestamp atomicity is not an official guarantee; retain and investigate all intermediate mismatches.**
+
+Replayed indicative 10 Up + 10 Down *taker quote-cost* probe on ~20-second end-of-market sample: 20 overlapping anchors at each of 0, 50, 100, 200 and 500ms modeled delays; **zero positive net quotes at each delay**. 0ms median -$0.38525, 500ms median -$0.38217 per 10-pair basket. Model uses international Crypto taker fee `shares * 0.07 * p * (1-p)` from [official fee schedule](https://help.polymarket.com/en/articles/13364478-trading-fees). This is NOT fills, directional quote-lag strategy, settlement or independently validated net PnL. No full five-minute market, OOS sample or lawful trading access established.
+
+## Historical ID review, CLAIM vs verified
+- **0001 ACTIVE VALIDATION / 0014 RESEARCH CANDIDATE**: raw hash and replay verified; no complete 5m market or positive executable edge. Old failure remains: latency, arrival depth, fees, settlement, OOS. Falsifier: fixed-parameter after-fee OOS net <= 0 or inadequate evaluable samples.
+- **0002 / 0015 RESEARCH CANDIDATE**: [official NegRisk V2 migration docs](https://github.com/Polymarket/polymarket-v2-external/blob/main/docs/migration.md) confirm synthetic Other, result/migration restrictions. This changes protocol verification, not guaranteed profit. Require exact payoff-state proof, version, eligible conversions, multi-leg depth, partial-fill and costs. Falsifier: any payoff state/leg failure violates guarantee or executable net <= 0.
+- **0003 REJECTED / 0008 RESEARCH CANDIDATE**: new [cross-venue Reddit bot claims](https://www.reddit.com/r/algotrading/comments/1wt6hzg/i_made_a_bot_that_spots_riskfree_arbitrage/) are not independent settlement/fill evidence. No substantive fix to mismatched rules, two-leg non-atomic fills or locked capital. Reject 0003; only read-only rule-identity and depth tests for 0008.
+- **0007 WATCHLIST**: wallet dashboards and PnL rankings are source claims, not independently profitable follower executions; attribution, survivorship, delay and liquidity remain unaddressed.
+- **0010 WATCHLIST**: [Coinbase Bazaar MCP docs](https://docs.cdp.coinbase.com/api-reference/v2/rest-api/x402-facilitator/bazaar-mcp-server) confirm paid-endpoint discovery; a [2026-10-24 third-party catalogue snapshot](https://vibesprings.net/state-of-x402) claims 2,144 merchants, 1,481 with zero earnings over 30 days. Its calls x listed-price GMV is a **proxy**, not reconciled revenue. New API-delivery audit framing is a possible product specialization, not a new strategy or proven customer demand. Reopen only on independent customers, receipts, licensing and positive net unit economics.
+- **0013 WATCHLIST**: no synchronized funding/hedge depth, basis, margin or liquidation evidence; unchanged.
+- **0017 WATCHLIST**: [Kalshi official resting liquidity incentive](https://help.kalshi.com/en/articles/13823851-liquidity-incentive-program) runs to Jan 1, 2027 subject to change. Distinct from terminated volume rewards and rejected wash-trading 0012. No reward/fill-level profitability evidence; adverse-selection-adjusted OOS net required.
+
+## Next acceptance gates
+- **Oct 25**: Paper engine/ledger tests + batch boundary diagnostics; not yet met. Do not silently filter 58 mismatches.
+- **Oct 30**: multiple full non-overlapping 5m lawful data windows, raw hashes, replay, depth, fees, simulated fills/nonfills, settlement ledger; not yet met.
+- **Nov 6**: frozen OOS after-fee PnL and explicit GO/NO-GO for **further Paper only**; not yet evaluable.
+
+No live orders, wallets, signatures, transfers, paid purchases or geo-restriction bypass. No strategy status changed. Reproducible offline evidence bundle delivered separately in the conversation.
