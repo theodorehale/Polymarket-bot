@@ -1,0 +1,45 @@
+name: Microstructure Real Feed Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run read-only real-feed collector for 45 seconds
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM 45s npm run microstructure:collect | tee /tmp/hale-smoke.log
+          code=${PIPESTATUS[0]}
+          set -e
+          if grep -q "Unexpected server response: 451" /tmp/hale-smoke.log; then
+            echo "POLYMARKET_RTDS_ENVIRONMENT_BLOCKED_451"
+            exit 78
+          fi
+          if [ "$code" -ne 0 ] && [ "$code" -ne 124 ]; then exit "$code"; fi
+          test -s data/microstructure/hale-5m-events.jsonl
+          node - <<'NODE'
+          const fs=require('fs');
+          const rows=fs.readFileSync('data/microstructure/hale-5m-events.jsonl','utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+          const b=rows.filter(x=>x.stream==='binance'&&x.accepted).length;
+          const pa=rows.filter(x=>x.stream==='polymarket'&&x.accepted).length;
+          const pr=rows.filter(x=>x.stream==='polymarket'&&!x.accepted).length;
+          console.log(JSON.stringify({rows:rows.length,binanceAccepted:b,polymarketAccepted:pa,polymarketRejected:pr}));
+          if(b===0) throw new Error('NO_BINANCE_REAL_EVENTS');
+          if(pa===0) throw new Error('NO_POLYMARKET_ACCEPTED_REAL_EVENTS');
+          NODE
