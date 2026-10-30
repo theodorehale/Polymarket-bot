@@ -20,6 +20,9 @@ export function runLatencySweep(
   books: UnifiedMarketEvent<PolymarketBookPayload>[],
   config: LatencySweepConfig = {},
 ): PaperExecutionAttempt[] {
+  if (config.feeRate === undefined || !Number.isFinite(config.feeRate) || config.feeRate < 0) {
+    throw new Error('EXPLICIT_NONNEGATIVE_FEE_RATE_REQUIRED');
+  }
   const latencies = config.latenciesMs ?? [50, 100, 200, 500];
   const requestedSize = config.requestedSize ?? 10;
   const attempts: PaperExecutionAttempt[] = [];
@@ -58,7 +61,7 @@ export function runLatencySweep(
       fairPrice:candidate.fairPrice,
     }, book, {
       latencyMs,
-      feeRate:config.feeRate ?? 0,
+      feeRate:config.feeRate,
       minNetEdge:config.minNetEdge ?? 0,
     }));
   }
