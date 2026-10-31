@@ -35,8 +35,9 @@ function reject(signal: PaperSignal, cfg: Required<PaperExecutionConfig>, status
 }
 
 /**
- * Deterministic paper execution against the first REAL book observed at/after
- * hypothetical arrival. No live order path exists in this module.
+ * Conservative paper execution against a previously observed full-book state.
+ * This does not model queue priority, intervening deltas, or guaranteed fills.
+ * No live order path exists in this module.
  */
 export function simulatePaperExecution(
   signal: PaperSignal,
@@ -59,9 +60,13 @@ export function simulatePaperExecution(
   if (book.clock.receivedAtMs > arrival) {
     return reject(signal, cfg, 'PAPER_MISSED', 'BOOK_OBSERVED_AFTER_HYPOTHETICAL_ARRIVAL');
   }
-  if (book.clock.receivedAtMs < arrival) return reject(signal, cfg, 'PAPER_MISSED', 'BOOK_PRECEDES_HYPOTHETICAL_ARRIVAL');
+  if (book.kind !== 'book_snapshot') return reject(signal, cfg, 'PAPER_MISSED', 'REQUIRES_RECONSTRUCTED_FULL_BOOK');
   const sourceTs = book.clock.sourceTimestampMs;
-  if (sourceTs === undefined || arrival - sourceTs > cfg.maxBookAgeMs) return reject(signal, cfg, 'REJECTED_STALE_BOOK', 'BOOK_STALE_AT_HYPOTHETICAL_ARRIVAL');
+  if (sourceTs !== undefined && sourceTs > arrival) return reject(signal, cfg, 'PAPER_MISSED', 'SOURCE_TIMESTAMP_AFTER_ARRIVAL');
+  if (!Number.isFinite(book.clock.receivedAtMs) || arrival - book.clock.receivedAtMs > cfg.maxBookAgeMs ||
+      sourceTs === undefined || !Number.isFinite(sourceTs) || arrival - sourceTs > cfg.maxBookAgeMs) {
+    return reject(signal, cfg, 'REJECTED_STALE_BOOK', 'BOOK_STALE_AT_HYPOTHETICAL_ARRIVAL');
+  }
 
   const levels = signal.side === 'BUY' ? book.payload.asks : book.payload.bids;
   let remaining = signal.requestedSize;
