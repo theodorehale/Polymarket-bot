@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - experiment/5m-microstructure-paper-v0.1
+      - fix/paper-causality-fee-20261030
   pull_request:
     branches:
       - main
