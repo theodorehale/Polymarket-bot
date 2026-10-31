@@ -6,6 +6,7 @@ export interface LatencySweepConfig {
   requestedSize?: number;
   feeRate?: number;
   minNetEdge?: number;
+  maxBookAgeMs?: number;
 }
 
 export interface PaperCandidate {
@@ -30,8 +31,9 @@ export function runLatencySweep(
   for (const latencyMs of latencies) {
     const arrival = candidate.observation.t0SpotShockMs + latencyMs;
     const book = books
-      .filter(b => b.tokenId === candidate.tokenId && b.clock.receivedAtMs >= arrival)
-      .sort((a,b) => a.clock.receivedAtMs - b.clock.receivedAtMs)[0];
+      .filter(b => b.marketId === candidate.observation.marketId && b.tokenId === candidate.tokenId &&
+        b.kind === 'book_snapshot' && b.clock.receivedAtMs <= arrival)
+      .sort((a,b) => b.clock.receivedAtMs - a.clock.receivedAtMs)[0];
 
     if (!book) {
       attempts.push({
@@ -46,7 +48,7 @@ export function runLatencySweep(
         requestedSize,
         referencePrice:candidate.fairPrice,
         status:'PAPER_MISSED',
-        reason:'NO_BOOK_AT_OR_AFTER_HYPOTHETICAL_ARRIVAL',
+        reason:'NO_CAUSALLY_OBSERVED_FULL_BOOK_AT_ARRIVAL',
       });
       continue;
     }
@@ -63,6 +65,7 @@ export function runLatencySweep(
       latencyMs,
       feeRate:config.feeRate,
       minNetEdge:config.minNetEdge ?? 0,
+      maxBookAgeMs:config.maxBookAgeMs,
     }));
   }
   return attempts;
