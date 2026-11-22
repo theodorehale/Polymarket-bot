@@ -1,0 +1,100 @@
+{
+  "schemaVersion": "hale-capture-report-v1",
+  "decision": "NO_GO",
+  "strategy": "BINANCE_BTCUSDT_TO_POLYMARKET_BTC_5M",
+  "blockers": [
+    "BINANCE_HTTP_451",
+    "NO_PAIRED_SPOT_FEED",
+    "NO_CAUSAL_STRATEGY_SIGNALS_OR_HELD_OUT_WINDOWS",
+    "SNAPSHOTS_ONLY_DELTAS_NOT_RECONSTRUCTED",
+    "TRADING_ELIGIBILITY_BLOCKED",
+    "SOURCE_CLOCK_AHEAD_OBSERVED"
+  ],
+  "data": {
+    "rawSha256": "b6f628a5d99422c37d4485f374d93bad0fe787bbe71d17814a6a89939ffacaf0",
+    "frames": 20602,
+    "eventTypes": {
+      "book": 236,
+      "price_change": 20248,
+      "last_trade_price": 117
+    },
+    "snapshots": 236,
+    "acceptedSnapshots": 186,
+    "rejected": {
+      "SOURCE_TIMESTAMP_IN_FUTURE": 50
+    },
+    "parseErrors": 0,
+    "marketId": "0xc496182273996af074b3607511570fc6a27ba7e7fa4d152035f87a9317fba19c",
+    "tokenCount": 2,
+    "firstReceivedAtMs": 1792537569809,
+    "lastReceivedAtMs": 1792537597470
+  },
+  "feeEvidence": {
+    "source": "https://gamma-api.polymarket.com/markets/slug/btc-updown-5m-1792537500",
+    "recordedAt": "2026-10-20T23:05:51.088Z",
+    "rate": 0.07,
+    "exponent": 1,
+    "rebatesAssumed": 0,
+    "rounding": "up per level to 5 decimals"
+  },
+  "mechanicalBenchmark": {
+    "label": "OVERLAPPING_SNAPSHOT_ROUND_TRIPS_NOT_STRATEGY_RETURNS",
+    "executionAssumption": "Entry at observed ask depth and exit at first full snapshot within 100ms of horizon. No queue or network execution guarantee.",
+    "rows": [
+      {
+        "holdingPeriodMs": 50,
+        "requestedShares": 10,
+        "attempts": 186,
+        "closedScenarios": 92,
+        "missingExit": 94,
+        "noDepth": 0,
+        "positiveAfterFees": 0,
+        "meanGrossUsd": -0.1969576086956524,
+        "meanFeesUsd": 0.34018913043478277,
+        "meanNetUsd": -0.5371467391304346
+      },
+      {
+        "holdingPeriodMs": 100,
+        "requestedShares": 10,
+        "attempts": 186,
+        "closedScenarios": 74,
+        "missingExit": 112,
+        "noDepth": 0,
+        "positiveAfterFees": 0,
+        "meanGrossUsd": -0.20129054054054066,
+        "meanFeesUsd": 0.3408413513513516,
+        "meanNetUsd": -0.542131891891892
+      },
+      {
+        "holdingPeriodMs": 200,
+        "requestedShares": 10,
+        "attempts": 186,
+        "closedScenarios": 74,
+        "missingExit": 112,
+        "noDepth": 0,
+        "positiveAfterFees": 2,
+        "meanGrossUsd": -0.18129864864864878,
+        "meanFeesUsd": 0.3400485135135137,
+        "meanNetUsd": -0.5213471621621626
+      },
+      {
+        "holdingPeriodMs": 500,
+        "requestedShares": 10,
+        "attempts": 186,
+        "closedScenarios": 44,
+        "missingExit": 142,
+        "noDepth": 0,
+        "positiveAfterFees": 5,
+        "meanGrossUsd": -0.14727272727272733,
+        "meanFeesUsd": 0.34054318181818183,
+        "meanNetUsd": -0.4878159090909092
+      }
+    ]
+  },
+  "strategyPaper": {
+    "attempts": 0,
+    "closedTrades": 0,
+    "netPnlUsd": null,
+    "reason": "NOT_EVALUABLE_WITHOUT_REQUIRED_SPOT_FEED"
+  }
+}

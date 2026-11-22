@@ -1,0 +1,17 @@
+{
+  "commit": "fb99abd2057fc8c760001b0f7c04f3a2f83f7042",
+  "cases": [
+    {
+      "case": "NaN_fair_price",
+      "status": "PAPER_FILLED"
+    },
+    {
+      "case": "wrong_token",
+      "status": "PAPER_FILLED"
+    },
+    {
+      "case": "far_future_book",
+      "status": "PAPER_FILLED"
+    }
+  ]
+}

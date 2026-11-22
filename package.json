@@ -34,9 +34,10 @@
     "example:live-arb": "tsx examples/11-live-arbitrage-scan.ts",
     "example:trending-arb": "tsx examples/12-trending-arb-monitor.ts",
     "example:arb-service": "tsx examples/13-arbitrage-service.ts",
-    "microstructure:collect": "tsx src/microstructure/dual-ws-runner.ts",
+    "microstructure:collect": "node scripts/microstructure/collect-public-books.mjs",
     "microstructure:report": "tsx src/microstructure/lead-lag-report.ts",
-    "microstructure:validate": "npm run build && npm test -- --run src/microstructure"
+    "microstructure:validate": "npm run build && npm test -- --run src/microstructure",
+    "microstructure:replay": "tsx src/microstructure/capture-report.ts"
   },
   "keywords": [
     "polymarket",

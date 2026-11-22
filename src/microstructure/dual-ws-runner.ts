@@ -7,7 +7,7 @@ import { LeadLagDetector } from './lead-lag-detector.js';
 
 interface PersistedEnvelope {
   recordedAtMs: number;
-  stream: 'binance' | 'polymarket';
+  stream: 'binance' | 'polymarket' | 'detector';
   accepted: boolean;
   reason?: string;
   event?: unknown;
@@ -61,6 +61,20 @@ let binanceCount = 0;
 let polyAccepted = 0;
 let polyRejected = 0;
 
+function persistLeadLag(observations: ReturnType<LeadLagDetector['flushExpired']>): void {
+  for (const observation of observations) {
+    appendJsonl(outputPath, {
+      recordedAtMs: Date.now(),
+      stream: 'detector',
+      accepted: true,
+      reason: observation.reactionStatus === 'TIMEOUT'
+        ? 'LEAD_LAG_TIMEOUT'
+        : 'LEAD_LAG_OBSERVATION',
+      event: observation,
+    });
+  }
+}
+
 binance.connect(event => {
   binanceCount += 1;
   appendJsonl(outputPath, {
@@ -69,7 +83,7 @@ binance.connect(event => {
     accepted: true,
     event,
   });
-  detector.onBinance(event);
+  persistLeadLag(detector.onBinance(event));
 });
 
 polymarket.connect((result, raw) => {
@@ -82,15 +96,7 @@ polymarket.connect((result, raw) => {
       reason: result.evidence.reason,
       event: result.event,
     });
-    for (const observation of detector.onPolymarket(result.event)) {
-      appendJsonl(outputPath, {
-        recordedAtMs: Date.now(),
-        stream: 'polymarket',
-        accepted: true,
-        reason: 'LEAD_LAG_OBSERVATION',
-        event: observation,
-      });
-    }
+    persistLeadLag(detector.onPolymarket(result.event));
     return;
   }
 
@@ -110,6 +116,10 @@ polymarket.connect((result, raw) => {
 });
 
 const statsTimer = setInterval(() => {
+  persistLeadLag(detector.flushExpired(
+    process.hrtime.bigint().toString(),
+    Date.now(),
+  ));
   process.stdout.write(
     JSON.stringify({
       outputPath,
@@ -123,6 +133,10 @@ const statsTimer = setInterval(() => {
 
 function shutdown(): void {
   clearInterval(statsTimer);
+  persistLeadLag(detector.flushExpired(
+    process.hrtime.bigint().toString(),
+    Date.now(),
+  ));
   binance.close();
   polymarket.close();
   process.exit(0);

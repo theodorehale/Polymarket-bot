@@ -1,0 +1,16 @@
+{
+  "reviewedHead": "fb99abd2057fc8c760001b0f7c04f3a2f83f7042",
+  "runId": 37198507175,
+  "jobId": 111425187308,
+  "url": "https://github.com/theodorehale/Polymarket-bot/actions/runs/37198507175",
+  "conclusion": "failure",
+  "excerpts": [
+    "2026-10-04T11:22:17.0821770Z Azure Region: eastus",
+    "2026-10-04T11:22:32.4756006Z \u001b[36;1mif grep -q \"Unexpected server response: 451\" /tmp/hale-smoke.log; then\u001b[0m",
+    "2026-10-04T11:22:33.5466315Z       _url: 'wss://ws-live-data.polymarket.com/',",
+    "2026-10-04T11:22:33.5469450Z     [Symbol(kData)]: '{\"body\":{\"message\":\"CLOB messages are not supported anymore, please visit https://discord.com/channels/710897173927297116/775506448041115669/1463547809067434130 to learn more\"},\"statusCode\":400}\\n'",
+    "2026-10-04T11:22:33.6653403Z Error: Unexpected server response: 451",
+    "2026-10-04T11:22:33.6844350Z ##[error]Process completed with exit code 1."
+  ],
+  "interpretation": "RTDS opened but returned CLOB deprecation. Unhandled 451 stack does not identify endpoint; prior workflow attribution to Polymarket is not established."
+}

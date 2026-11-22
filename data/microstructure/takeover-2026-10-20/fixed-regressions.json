@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {
+      "case": "NaN_fair_price",
+      "status": "REJECTED_NO_EDGE"
+    },
+    {
+      "case": "wrong_token",
+      "status": "REJECTED_STALE_BOOK"
+    },
+    {
+      "case": "far_future_book",
+      "status": "PAPER_MISSED"
+    }
+  ]
+}

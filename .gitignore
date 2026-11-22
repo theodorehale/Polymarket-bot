@@ -32,3 +32,7 @@ coverage/
 .cache/
 *.tsbuildinfo
 .mcp.json
+# Raw capture has a committed compressed counterpart with SHA-256 manifest
+/data/microstructure/takeover-2026-10-20/public-book-raw.jsonl
+
+/data/microstructure/capture-*/

@@ -68,11 +68,15 @@ export interface PaperExecutionAttempt {
   marketId: string;
   tokenId: string;
   signalReceivedAtMs: number;
+  signalMonotonicNs?: string;
   hypotheticalArrivalAtMs: number;
+  hypotheticalArrivalMonotonicNs?: string;
   configuredLatencyMs: number;
   side: 'BUY' | 'SELL';
   requestedSize: number;
   referencePrice: number;
+  fillObservedAtMs?: number;
+  fillObservedMonotonicNs?: string;
   executablePrice?: number;
   executableSize?: number;
   estimatedFees?: number;
@@ -88,13 +92,23 @@ export interface LeadLagObservation {
   schemaVersion: 'hale-5m-leadlag-v0.1';
   observationId: string;
   marketId: string;
+  tokenId?: string;
+  outcomeDirection?: 'UP' | 'DOWN';
   spotInstrument: string;
+  /** RESPONDED observations carry T2; TIMEOUT observations explicitly preserve non-response. */
+  reactionStatus?: 'RESPONDED' | 'TIMEOUT';
   t0SpotShockMs: number;
+  /** Monotonic receive time is the canonical cross-source latency clock. */
+  t0SpotShockMonotonicNs?: string;
   t1FairValueChangeMs?: number;
   t2PolyRepriceStartMs?: number;
+  t2PolyRepriceStartMonotonicNs?: string;
+  timeoutAtMs?: number;
+  timeoutAtMonotonicNs?: string;
   t3StaleQuoteGoneMs?: number;
   t4HypotheticalArrivalMs?: number;
   t5HypotheticalFillMs?: number;
+  /** Derived from monotonic receive times, never from cross-source wall-clock subtraction. */
   spotToPolyRepriceMs?: number;
   staleQuoteLifetimeMs?: number;
   paperAttemptId?: string;

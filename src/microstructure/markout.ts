@@ -1,3 +1,4 @@
+import { evaluatePolymarketBookEvidence } from './evidence-gate.js';
 import type { PaperExecutionAttempt, PolymarketBookPayload, UnifiedMarketEvent } from './types.js';
 
 export interface Markout {
@@ -13,11 +14,11 @@ export function computeMarkouts(
  books:UnifiedMarketEvent<PolymarketBookPayload>[],
  horizons=[100,250,500,1000,5000],
 ):Markout[]{
- if(attempt.status!=='PAPER_FILLED'||attempt.executablePrice===undefined) return [];
+ if(attempt.status!=='PAPER_FILLED'||attempt.executablePrice===undefined || !Number.isFinite(attempt.fillObservedAtMs)) return [];
  const executablePrice = attempt.executablePrice;
  return horizons.map(h=>{
-   const target=attempt.hypotheticalArrivalAtMs+h;
-   const b=books.filter(x=>x.tokenId===attempt.tokenId&&x.clock.receivedAtMs>=target)
+   const target=attempt.fillObservedAtMs!+h;
+   const b=books.filter(x=>x.marketId===attempt.marketId&&x.tokenId===attempt.tokenId&&x.clock.receivedAtMs>=target&&x.clock.receivedAtMs<=target+100&&evaluatePolymarketBookEvidence(x,x.clock.receivedAtMs).accepted)
      .sort((a,b)=>a.clock.receivedAtMs-b.clock.receivedAtMs)[0];
    if(!b) return {attemptId:attempt.attemptId,horizonMs:h,status:'MISSING'};
    const m=mid(b); if(m===undefined) return {attemptId:attempt.attemptId,horizonMs:h,status:'MISSING'};

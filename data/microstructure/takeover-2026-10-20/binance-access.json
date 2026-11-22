@@ -1,0 +1,6 @@
+{
+  "recordedAt": "2026-10-20T23:04:51.019Z",
+  "endpoint": "wss://stream.binance.com:9443/ws/btcusdt@trade",
+  "httpStatus": 451,
+  "decision": "ACCESS_BLOCKED_STOP"
+}
